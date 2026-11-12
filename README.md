@@ -37,6 +37,44 @@ TileLang revision and required interfaces are recorded in
 See [the Ascend guide](docs/ascend.md), [compatibility](docs/compatibility.md),
 [extraction provenance](docs/migration.md), and [verification](docs/verification.md).
 
+## Functional examples
+
+With pytest installed in the compatible environment, run all four standalone
+examples through the installed `torch_tilelang_ascend` backend:
+
+```bash
+python -m pytest examples/ascend -q
+```
+
+| Example | Input shape | Supported dtypes |
+| --- | --- | --- |
+| [Bias + ReLU + Scale](examples/ascend/test_torch_compile_elementwise.py) | `[7, 65]` | fp16, bf16, fp32 |
+| [Softmax](examples/ascend/test_torch_compile_softmax.py) | `[7, 128]` | fp16, bf16, fp32 |
+| [RMSNorm](examples/ascend/test_torch_compile_rmsnorm.py) | `[7, 128]` | fp16, bf16, fp32 |
+| [GEMM + bias + ReLU](examples/ascend/test_torch_compile_gemm_bias_relu.py) | `[32, 64]`, weight `[64, 64]` | fp16, bf16 |
+
+All options are optional: `--device` defaults to `npu:0`, `--dtype` to `all`
+supported dtypes per example, and `--seed` to `0`. Override them as needed:
+
+```bash
+python -m pytest examples/ascend -q --device npu:1 --dtype bfloat16 --seed 0
+```
+
+Each script can also run directly with the same optional arguments:
+
+```bash
+python examples/ascend/test_torch_compile_rmsnorm.py
+python examples/ascend/test_torch_compile_rmsnorm.py --device npu:1 --dtype float32
+```
+
+The examples use strict compilation with fusion disabled. Each dtype checks
+three different inputs against Torch and verifies that later calls preserve
+previous outputs. A complete hardware run reports **11 passed**, covering 33
+requests. Missing Ascend compiler support or NPU hardware produces explicit
+skips; skips do not establish successful device execution. Selecting `float32`
+skips the GEMM example because that schedule supports fp16/bf16 inputs.
+The examples run separately from the default `tests/` collection.
+
 ## Development and verification
 
 After installing pytest and ruff in the compatible environment:
