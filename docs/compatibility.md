@@ -8,6 +8,13 @@ The tested compiler baseline is TileLang
 The default AscendC path uses TileLang's existing interfaces directly. The
 verification environment and limits are recorded in [verification](verification.md).
 
+A later AscendC NPU acceptance record uses TileLang
+`6c9232103a9cba8177d7ac766f2465f1230f0a19` with the same TVM revision,
+Torch 2.12.0, torch_npu 2.12.0.post2 and CANN 9.3 on Ascend950PR_957b.
+Its numerical and 30-minute fixed-shape soak checks passed. Performance and PTO
+limitations are recorded separately in [verification](verification.md); this
+does not establish a general release-version range.
+
 The package declares `torch` and `tilelang` dependencies. This experimental
 snapshot has no verified release-version range yet; use the tested revision
 when reproducing its compiler checks. A generic TileLang wheel may omit Ascend

@@ -81,7 +81,7 @@ After installing pytest and ruff in the compatible environment:
 
 ```bash
 python -m pytest tests -q -m "not pto"
-python -m ruff check src tests examples
+python -m ruff check src tests examples scripts
 python -m pip wheel . --no-deps --no-build-isolation
 ```
 
@@ -93,6 +93,21 @@ separately validated PTO environment; the tested compiler baseline has a known
 PTO rectangular-GEMM codegen failure recorded in [verification](docs/verification.md).
 Runtime, non-default-stream and fresh-process cache checks must pass on actual
 hardware before publishing a hardware compatibility claim.
+
+Run the complete AscendC hardware acceptance workflow with defaults:
+
+```bash
+python scripts/verify_npu.py
+```
+
+This selects the first idle, healthy NPU inside the visible allocation and
+creates a unique result directory beside the checkout under
+`torch-tilelang-artifacts/`. It runs the regression suite, functional examples,
+a 30-minute soak and three-process performance measurements. Override the
+device or output with `--physical-device` or `--output`; add `--include-pto`
+for the independent PTO audit. See
+[verification](docs/verification.md) for stage selection, recorded NPU results
+and the remaining compatibility/performance blockers.
 
 ## Scope
 
