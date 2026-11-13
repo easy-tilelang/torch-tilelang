@@ -38,7 +38,7 @@ _CACHE_PROBE = textwrap.dedent(
         JITKernel._compile_and_create_adapter = forbid_compile
 
     reports = []
-    backend = make_backend(GraphConfig(target='pto', execution_backend='pto', strict=True))
+    backend = make_backend(GraphConfig(target='pto', execution_backend=sys.argv[2], strict=True))
 
     def capture(gm, inputs):
         runner = backend(gm, inputs)
@@ -77,7 +77,8 @@ _CACHE_PROBE = textwrap.dedent(
 
 @tilelang.testing.requires_ascend
 @pytest.mark.pto
-def test_pto_graph_disk_cache_in_fresh_process(tmp_path):
+@pytest.mark.parametrize("execution_backend", ["auto", "pto"])
+def test_pto_graph_disk_cache_in_fresh_process(tmp_path, execution_backend):
     if importlib.util.find_spec("ptodsl") is None or shutil.which("ptoas") is None:
         pytest.skip("PTO execution requires PTODSL, ptoas, and Bisheng")
     try:
@@ -88,7 +89,7 @@ def test_pto_graph_disk_cache_in_fresh_process(tmp_path):
     results = []
     for mode in ("populate", "reload"):
         result = subprocess.run(
-            [sys.executable, "-u", "-c", _CACHE_PROBE, mode],
+            [sys.executable, "-u", "-c", _CACHE_PROBE, mode, execution_backend],
             cwd=tmp_path,
             env=environment,
             text=True,

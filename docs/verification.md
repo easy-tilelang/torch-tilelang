@@ -179,6 +179,36 @@ and explicit PTO source probe. `card5/` contains the complete replacement timing
 batch and independent PTO audit. `report.json` summarizes the gates, while the
 logs, pytest XML and raw timing JSON retain the evidence and skip reasons.
 
+## PTO adapter follow-up (2026-11-13)
+
+After the baseline acceptance above, the graph compatibility layer was updated
+to explicitly select the PTO adapter when a PTO target's automatic choice is
+TVM-FFI. An explicit PTO/TVM-FFI pair is rejected. This changes the graph-local
+selection policy, preserves target attributes and immutable user options, and
+does not alter TileLang's registry or compiler sources.
+
+The focused compiler/profiler compatibility and runtime tests completed with
+**91 passed, 1 skipped**. The only skip is the optional typed profiler-error
+interface; the six former PTO-related skips now execute and pass. Source-only
+PTO tests improved from 23 preflight failures to **22 passed, 1 failed**. The
+remaining wide GEMM failure reaches the known native L0C-to-UB stride check.
+The complete non-PTO regression then passed with **278 passed, 1 skipped,
+124 deselected** in 41.93 seconds, including the hardware cases. Ruff and
+`git diff --check` also passed.
+
+On physical card 5, all **four** targeted hardware cases passed: the public
+`torch.compile` options select actual PTO adapters with both `auto` and explicit
+`pto`, and both settings pass a fresh-process disk-cache test. Each cache case
+populates an isolated directory, then starts another process with compilation
+forbidden and requires both kernels to restore as `PTOKernelAdapter`. It also
+checks changed inputs on a non-default stream and preservation of old outputs.
+These are fp32 elementwise cache checks; they do not accept the broader PTO
+configuration or resolve the PTODSL/rectangular-GEMM failures above. The
+acceptance driver's full-runtime prerequisite for its cache stage is unchanged.
+
+The follow-up logs and pytest XML are stored separately in
+`/data/caojian/workspace/git/github/easy-tilelang/torch-tilelang-artifacts/pto-adapter-fix.dlfhqr`.
+
 ## Reproducing hardware acceptance
 
 No arguments are required:

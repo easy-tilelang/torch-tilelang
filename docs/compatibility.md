@@ -46,6 +46,11 @@ versions from that machine before reproducing the combination.
 The default target retains the original PR's `dav-3510` architecture. Use
 explicit target options for the device being validated. Default execution is
 AscendC/TVM-FFI; a PTO target selects the existing PTO variant and adapter.
+For graph compilation, PTO with `execution_backend="auto"` is explicitly
+resolved to the PTO adapter even when TileLang's own automatic preference is
+TVM-FFI. An explicit PTO target with `execution_backend="tvm_ffi"` is rejected.
+This graph-specific policy does not change TileLang's backend registry or
+other compilation clients. Missing PTO dependencies still produce an error.
 
 ## Interfaces
 

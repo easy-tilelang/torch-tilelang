@@ -17,6 +17,14 @@ def resolve_graph_context(config: GraphConfig):
     if "ascend" not in Target.list_kinds() or tvm.get_global_func("tl.TargetIsAscend", allow_missing=True) is None:
         raise UnsupportedGraphError("Ascend graph compilation is unavailable in this TileLang build; rebuild with USE_ASCEND=ON")
     context = create_backend_context(config.target, execution_backend=config.execution_backend)
+    if context.module.name == "pto":
+        if config.execution_backend == "tvm_ffi":
+            raise ValueError("Invalid execution backend 'tvm_ffi' for a PTO graph target; use 'pto' or 'auto'")
+        if config.execution_backend == "auto" and context.execution_backend.name != "pto":
+            # TileLang may prefer TVM-FFI for this codegen variant. Graph
+            # execution requires its PTO adapter; resolve that pair explicitly
+            # without changing TileLang's process-wide backend registry.
+            context = create_backend_context(config.target, execution_backend="pto")
     codegen = {
         ("ascend", "tvm_ffi"): "target.build.tilelang_ascend",
         ("pto", "pto"): "target.build.tilelang_pto_without_compile",

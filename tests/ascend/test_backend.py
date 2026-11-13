@@ -233,14 +233,15 @@ def test_profiled_torch_compile_records_fusion_decision(target, execution_backen
 
 @tilelang.testing.requires_ascend
 @pytest.mark.pto
-def test_public_torch_compile_options_select_pto_adapter(monkeypatch):
+@pytest.mark.parametrize("execution_backend", ["auto", "pto"])
+def test_public_torch_compile_options_select_pto_adapter(monkeypatch, execution_backend):
     torch._dynamo.reset()
     kernels = _capture_kernels(monkeypatch)
     compiled = torch.compile(
         _model,
         backend="torch_tilelang_ascend",
         fullgraph=True,
-        options={"target": "pto", "execution_backend": "pto", "strict": True},
+        options={"target": "pto", "execution_backend": execution_backend, "strict": True},
     )
     x = torch.randn(7, 65, device="npu")
     bias = torch.randn(65, device="npu")
