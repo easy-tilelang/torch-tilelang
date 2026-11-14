@@ -209,6 +209,99 @@ acceptance driver's full-runtime prerequisite for its cache stage is unchanged.
 The follow-up logs and pytest XML are stored separately in
 `/data/caojian/workspace/git/github/easy-tilelang/torch-tilelang-artifacts/pto-adapter-fix.dlfhqr`.
 
+## PTO compiler fixes (2026-11-14)
+
+Both compiler fixes are available on
+[`erhsh/tilelang:fix/ascend-pto-4013-4014`](https://github.com/erhsh/tilelang/tree/fix/ascend-pto-4013-4014),
+based on upstream `d2dbf20cb279b3021ada636ffa8026706e0a0bcb`. No pull request
+has been opened. The commits are:
+
+- [`07563fc6`](https://github.com/erhsh/tilelang/commit/07563fc6): validate the NZ
+  L0C source stride against M, keeping the ND UB destination check against N.
+  This fixes [#4013](https://github.com/tile-ai/tilelang/issues/4013), and also
+  rejects insufficient source strides for tall rectangles.
+- [`de9c5126`](https://github.com/erhsh/tilelang/commit/de9c512609dffe7956b2e0a1a395fed6c1e7e923):
+  materialize scalar `pto.select` predicates and boolean branches as IR `i1`,
+  including expressions that Python evaluates to `True` or `False`. Control-flow
+  handling retains its constexpr behavior. This fixes TileLang's generated code
+  for [#4014](https://github.com/tile-ai/tilelang/issues/4014); PTODSL was not patched.
+
+The compiler was rebuilt from this clean worktree with Ascend enabled, using
+the same bundled TVM revision as above. Torch 2.12.0, torch_npu 2.12.0.post2,
+CANN 9.3 and ptoas 0.69 were used on Ascend950PR_957b. An isolated Python
+environment loads both the Python packages and native libraries from the fixed
+compiler checkout; subprocesses use that same environment.
+
+In the TileLang checkout, the following regression set passed **148 tests**:
+
+```bash
+python -m pytest -q \
+  testing/ascend/language/pto/test_pto_l0c_ub_stride.py \
+  testing/ascend/language/pto/test_pto_select_predicates.py \
+  testing/ascend/language/pto/test_pto_vmi_value_provenance.py \
+  testing/ascend/language/pto/test_pto_vmi_value_provenance_run.py
+```
+
+The new tests cover five wide/tall/square GEMM shapes with exact device
+references, rejection of undersized pitches, fp16/bf16/fp32 NaN-safe ReLU with
+constant and runtime conditions, boolean casts/branches and nonzero byte
+predicates. NaN, infinities and both signed zeros are included. Numerical
+comparisons allow equivalent zero signs: the existing PTOAS path also
+canonicalizes negative zero in the constant-folded ReLU control. Bitwise
+zero-sign preservation is not established by this acceptance.
+
+Against the fixed compiler, the standalone graph PTO gate passed source
+generation (**23 passed**), device runtime (**99 passed**) and fresh-process
+cache restoration (**2 passed**), with no skips or failures. Cache restoration
+was tested with both automatic and explicit PTO adapter selection, forbidding
+compilation in the second process. The original nine select-compilation and
+four stride-check failures no longer occur. These results establish the tested
+numerical and cache cases; PTO's 30-minute soak and performance acceptance
+remain separate requirements.
+
+The same fixed compiler also passed the full non-PTO regression with
+**278 passed, 1 skipped, 124 deselected**. The skip requires the optional
+`tilelang.profiler.errors` interface; no AscendC hardware test skipped. The
+standalone AscendC examples also passed all **11** dtype cases.
+
+PTO performance was then measured with the existing A/B/C example, adding
+`--target pto --execution-backend pto`. Both workloads used the original shapes,
+three fresh processes, five rounds per process and the unchanged 2% stability
+boundary. All six processes passed numerical validation and used actual
+`PTOKernelAdapter` kernels, with no Dynamo fallback. Device process snapshots
+before and after every process found no other workload on the selected card.
+Device health remained OK after the run.
+
+The values below are medians of process medians, in microseconds. Unstable
+measurements remain descriptive samples and do not establish a comparison.
+
+| Workload | A device | B device | C device | Torch device | Accepted device comparison |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Elementwise fp16 | 54.575 | 60.498 | 32.780 | 14.552 | Unavailable: C varied across processes |
+| GEMM epilogue bf16 | 9.052 | 9.478 | 4.834 | 8.034 | Torch/C = 1.662x |
+
+GEMM's C and Torch device samples passed stability checks within and across
+processes. Its A/B event samples did not, so B/C remains unavailable; this
+does not establish an isolated fusion speedup. Every wall comparison failed
+the stability boundary. The GEMM device result is therefore a bounded device
+timing result, and no end-to-end speedup is accepted. PTO's 30-minute soak was
+not run in this follow-up; the earlier AscendC soak does not validate PTO.
+
+To reproduce the graph audit, build the fixed TileLang revision with Ascend
+enabled and install its matching Python package into the environment used to
+run this checkout. Keep the matching Torch/torch_npu and CANN/PTO toolchain
+available, then run:
+
+```bash
+python scripts/verify_npu.py --stage environment
+python scripts/verify_npu.py --stage pto
+```
+
+The first command records the loaded source revision and native-library hashes.
+The second runs source generation, device correctness, and then fresh-process
+cache restoration when the full runtime gate passes. Neither command changes
+the compiler checkout or installs a dependency automatically.
+
 ## Reproducing hardware acceptance
 
 No arguments are required:

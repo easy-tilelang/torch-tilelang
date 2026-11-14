@@ -71,7 +71,12 @@ the default compilation path is unaffected. Generic RuntimeError and device
 execution failures are never translated into missing measurements.
 
 PTO is an optional backend with its own PTODSL, ptoas and Bisheng requirements.
-The tested compiler revision has a known PTO codegen failure for wide
-rectangular GEMM epilogues (`M=32, N=64`); AscendC source generation passes.
-PTO requires a separately validated compiler/toolchain combination. Its retained
-tests do not establish PTO device compatibility for this baseline.
+The original compiler baseline has PTO compilation failures for wide rectangular
+GEMM epilogues (`M=32, N=64`) and selects whose predicates become Python bools.
+The fixes are available in
+[`erhsh/tilelang` at `de9c5126`](https://github.com/erhsh/tilelang/commit/de9c512609dffe7956b2e0a1a395fed6c1e7e923),
+based on upstream `d2dbf20c`. These changes require rebuilding TileLang's native
+compiler as well as using its matching Python package. The tested combination
+and validation limits are recorded in
+[verification](verification.md#pto-compiler-fixes-2026-11-14); they do not establish
+a general PTO release-version range.

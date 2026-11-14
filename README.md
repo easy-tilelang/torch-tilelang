@@ -89,8 +89,9 @@ Unit tests inject CPU kernels while retaining the real FX/Relax frontend and
 graph executor. Source-only tests require an Ascend-enabled TileLang build.
 Runtime tests additionally require an NPU; PTO cases have the `pto` marker.
 Run optional PTO tests with `python -m pytest tests/ascend -q -m pto` against a
-separately validated PTO environment; the tested compiler baseline has a known
-PTO rectangular-GEMM codegen failure recorded in [verification](docs/verification.md).
+separately validated PTO environment. The original compiler baseline has PTO
+compilation failures; the fixes and their tested compiler revision are recorded
+in [verification](docs/verification.md#pto-compiler-fixes-2026-11-14).
 Runtime, non-default-stream and fresh-process cache checks must pass on actual
 hardware before publishing a hardware compatibility claim.
 
