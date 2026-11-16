@@ -360,6 +360,32 @@ reports are retained under the artifact directory printed by the driver:
 `pto-acceptance-20261116.gWW7PJ`, with `smoke/`, `ascendc-smoke/` and `full/`
 subdirectories. The artifact directory is outside the source checkout.
 
+## Card 4 performance retry (2026-11-16)
+
+The pending partial PTO benchmark stage was retried on user-authorized card 4
+using repository revision `9ae21ca` and the same fixed TileLang environment.
+Initial probes found no device process, zero compute utilization and
+`Health Status: OK`, with the existing HBM RAS configuration status retained.
+
+The first elementwise process completed successfully. The second process also
+completed numerical validation and used actual PTO adapters, but its post-run
+snapshot detected a new foreign process. Sampling then stopped as designed:
+**two of six processes executed, one accepted and one invalidated by device
+interference; the remaining four were not launched**. Subsequent probes found
+additional new processes on the card.
+
+Both executed processes' JSON artifacts passed the numerical/backend audit.
+These checks establish neither a complete three-process timing comparison nor
+new speedup evidence. The invocation exited nonzero; `report.json` records
+`scope: partial`, `execution_passed: false`, `timing_comparisons: inconclusive`,
+and both workload timing summaries remain `incomplete`. The earlier correctness
+and 30-minute soak results are unchanged. Performance acceptance still needs a
+complete batch on a card that remains free of competing processes.
+
+The artifact directory is `pto-card4-20261116.JqGZNY`, outside the checkout.
+It retains the exact commands, environment and native-library fingerprints,
+raw JSON and logs for both processes, and all command-level device snapshots.
+
 ## Reproducing hardware acceptance
 
 No arguments are required:
