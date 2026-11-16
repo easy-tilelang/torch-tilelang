@@ -155,15 +155,28 @@ def environment(output, physical_device):
     (output / "environment.json").write_text(json.dumps(result, indent=2) + "\n")
 
 
-def run_command(output, name, command, timeout=1800, device_snapshots=False):
+def device_problem(activity, health):
+    if health.get("exit_code") != 0 or not re.search(r"Health Status\s*:\s*OK\b", health.get("stdout", "")):
+        return "Device health could not be confirmed OK"
+    pids = {int(pid) for pid in re.findall(r"Process id:\s*(\d+)", activity.get("stdout", ""))}
+    if activity.get("exit_code") != 0 or (not pids and "No process in device." not in activity.get("stdout", "")):
+        return "Device activity could not be confirmed"
+    if pids - {os.getpid()}:
+        return "Other processes detected on the benchmark device"
+
+
+def run_command(output, name, command, timeout=1800, device_snapshots=False, validator=None):
     start = time.monotonic()
     record = {"name": name, "command": command, "cwd": str(ROOT), "started_at": now(),
               "visible_devices": os.environ["ASCEND_RT_VISIBLE_DEVICES"]}
     if device_snapshots:
         record["device_before"] = capture(["npu-smi", "info", "-t", "proc-mem", "-i", record["visible_devices"]])
+        record["health_before"] = capture(["npu-smi", "info", "-t", "health", "-i", record["visible_devices"]])
     print(f"{now()} starting {name}", flush=True)
     with (output / f"{name}.log").open("w") as log:
         try:
+            if device_snapshots and (problem := device_problem(record["device_before"], record["health_before"])):
+                raise RuntimeError(problem)
             with subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True) as process:
                 record["pid"] = process.pid
                 try:
@@ -178,11 +191,15 @@ def run_command(output, name, command, timeout=1800, device_snapshots=False):
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait()
                     raise
-        except (OSError, subprocess.TimeoutExpired) as error:
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as error:
             record.update(exit_code=-1, error=str(error))
+            log.write(str(error) + "\n")
     record.update(finished_at=now(), elapsed_seconds=time.monotonic() - start)
     if device_snapshots:
         record["device_after"] = capture(["npu-smi", "info", "-t", "proc-mem", "-i", record["visible_devices"]])
+        record["health_after"] = capture(["npu-smi", "info", "-t", "health", "-i", record["visible_devices"]])
+        if problem := device_problem(record["device_after"], record["health_after"]):
+            record.update(acceptance_passed=False, error=problem)
     xml = output / f"{name}.xml"
     if xml.exists():
         suites = ET.parse(xml).getroot().iter("testsuite")
@@ -197,6 +214,14 @@ def run_command(output, name, command, timeout=1800, device_snapshots=False):
         record["acceptance_passed"] = record["exit_code"] == 0 and counts["passed"] > 0 and not any(
             row["module"].startswith(("tests.ascend.", "examples.ascend.")) for row in record["skips"]
         )
+    if validator is not None:
+        try:
+            if record["exit_code"] == 0 and record.get("acceptance_passed") is not False:
+                record.update(validator())
+            else:
+                record["acceptance_passed"] = False
+        except (OSError, ValueError, KeyError, TypeError, AssertionError) as error:
+            record.update(acceptance_passed=False, error=f"Result validation failed: {error}")
     with (output / "commands.jsonl").open("a") as manifest:
         manifest.write(json.dumps(record) + "\n")
     print(json.dumps(record), flush=True)
@@ -240,17 +265,123 @@ def summarize_benchmarks(output):
     return result
 
 
+def command_passed(record):
+    return record["exit_code"] == 0 and record.get("acceptance_passed") is not False
+
+
+def validate_soak(path, backend, execution, seconds, min_calls):
+    result = json.loads(path.read_text())
+    assert result["status"] == "passed", "Soak did not pass"
+    assert (result["target_backend"], result["execution_backend"]) == (backend, execution), "Wrong soak backend"
+    assert math.isfinite(result["elapsed_seconds"]) and result["elapsed_seconds"] >= seconds, "Short soak duration"
+    assert result["calls"] >= min_calls, "Insufficient measured calls"
+    cases = result["cases"]
+    expected_names = {f"{model}_torch.{dtype}" for model in ("elementwise", "softmax", "rmsnorm", "gemm")
+                      for dtype in ("float16", "bfloat16", "float32") if model != "gemm" or dtype != "float32"}
+    assert len(cases) == 11 and {case["name"] for case in cases} == expected_names, "Incomplete soak cases"
+    for case in cases:
+        partitions = case["partitions"]
+        assert partitions and all(p["compiled"] and not p["fallback_calls"] and
+                                  (p["target_backend"], p["execution_backend"]) == (backend, execution)
+                                  for p in partitions), "Fallback or backend mismatch"
+        assert sum(p["compiled_calls"] for p in partitions) == case["calls_including_warmup"], "Call count mismatch"
+    assert sum(case["calls_including_warmup"] for case in cases) == result["calls"] + 110, "Warmup accounting mismatch"
+    samples = result["memory_samples"]
+    assert len(samples) >= 2, "Missing memory samples"
+    baseline = samples[0]["allocated_bytes"]
+    assert all(s["allocated_bytes"] <= baseline + 1024 * 1024 for s in samples), "Live memory growth"
+    return {"acceptance_passed": True, "soak": {
+        "elapsed_seconds": result["elapsed_seconds"], "calls": result["calls"],
+        "long_soak_accepted": result["elapsed_seconds"] >= 1800 and result["calls"] >= 10000,
+        "baseline_allocated_bytes": baseline, "peak_allocated_bytes": max(s["allocated_bytes"] for s in samples),
+    }}
+
+
+def validate_benchmark(path, backend, execution):
+    result = json.loads(path.read_text())
+    assert result["torch_compile_correct"], "Dynamo validation failed"
+    expected_adapter = "PTOKernelAdapter" if backend == "pto" else "TVMFFIKernelAdapter"
+    for name in ("A_default_unfused", "B_candidate_tile_unfused", "C_candidate_tile_fused", "Torch_NPU_eager"):
+        variant = result["variants"][name]
+        assert variant["correct"], "Numerical validation failed"
+        if name != "Torch_NPU_eager":
+            kernels = variant["kernels"]
+            assert kernels and all((k["target_backend"], k["execution_backend"], k["adapter"]) ==
+                                   (backend, execution, expected_adapter) for k in kernels.values()), "Wrong benchmark adapter"
+    partitions = result["dynamo_partitions"]
+    assert partitions and all(p["compiled"] and p["compiled_calls"] > 0 and not p["fallback_calls"] and
+                              (p["target_backend"], p["execution_backend"]) == (backend, execution)
+                              for p in partitions), "Dynamo fallback or backend mismatch"
+    return {"acceptance_passed": True}
+
+
+def run_soak(output, name, python, args, pto=False):
+    options = ["--target", "pto", "--execution-backend", "pto"] if pto else []
+    backend, execution = ("pto", "pto") if pto else ("ascend", "tvm_ffi")
+    path = output / "soak.json"
+    return run_command(output, name, [python, "scripts/npu_soak.py", "--seconds", str(args.soak_seconds),
+                       "--min-calls", str(args.min_calls), "--output", str(path), *options],
+                       timeout=max(1800, args.soak_seconds + 900),
+                       validator=lambda: validate_soak(path, backend, execution, args.soak_seconds, args.min_calls))
+
+
+def run_benchmarks(output, python, pto=False):
+    records = []
+    options = ["--target", "pto", "--execution-backend", "pto"] if pto else []
+    backend, execution = ("pto", "pto") if pto else ("ascend", "tvm_ffi")
+    for workload, dtype, dimensions in (
+        ("elementwise", "float16", ["--rows", "1024", "--cols", "1024"]),
+        ("gemm_epilogue", "bfloat16", ["--rows", "128", "--cols", "192", "--k", "256"]),
+    ):
+        for process in range(3):
+            stem = f"{workload}-{process}"
+            path = output / f"{stem}.json"
+            name = f"pto-{stem}" if pto else stem
+            record = run_command(output, name, [python, "examples/ascend/torch_compile.py", "--workload", workload,
+                                 "--dtype", dtype, *dimensions, "--device", "npu:0", "--seed", "0", *options,
+                                 "--bench", "--repeats", "5", "--output", str(path)], device_snapshots=True,
+                                 validator=lambda path=path: validate_benchmark(path, backend, execution))
+            records.append(record)
+            if not command_passed(record):
+                summary = {w: {"status": "incomplete", "reason": f"{name} failed; remaining sampling stopped"}
+                           for w in ("elementwise", "gemm_epilogue")}
+                (output / "benchmarks-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+                return records
+    summarize_benchmarks(output)
+    return records
+
+
+def backend_report(output, records, scope):
+    tests = [r for r in records if r["name"] in ("ascendc", "examples", "pto-codegen", "pto-runtime", "pto-cache")]
+    soak = next((r for r in records if r["name"] in ("soak", "pto-soak")), None)
+    summary_path = output / "benchmarks-summary.json"
+    has_benchmarks = any("elementwise-" in r["name"] or "gemm_epilogue-" in r["name"] for r in records)
+    timing = json.loads(summary_path.read_text()) if has_benchmarks and summary_path.exists() else {}
+    comparable = set(timing) == {"elementwise", "gemm_epilogue"} and all(row.get("status") == "measured" and
+                                     all(row["comparisons"][boundary]["fused_over_torch_latency"] is not None
+                                         for boundary in ("event", "wall")) for row in timing.values())
+    return {"scope": scope, "execution_passed": bool(records) and all(command_passed(r) for r in records),
+            "correctness": "passed" if tests and all(command_passed(r) for r in tests) else ("failed" if tests else "not_run"),
+            "soak": {"status": "passed" if command_passed(soak) else soak.get("status", "failed"),
+                     **soak.get("soak", {})} if soak else {"status": "not_run"},
+            "long_soak_accepted": bool(soak and command_passed(soak) and soak.get("soak", {}).get("long_soak_accepted")),
+            "timing_comparisons": "available" if comparable else ("inconclusive" if has_benchmarks else
+                                  ("blocked" if any(r["name"] == "pto-benchmarks" for r in records) else "not_run")),
+            "benchmarks": timing, "commands": records}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-device", type=int, help="Physical card; default: first idle, healthy visible card")
     parser.add_argument("--output", type=Path, help="Artifact directory; default: unique directory beside the checkout")
-    parser.add_argument("--stage", choices=("all", "environment", "regression", "examples", "soak", "benchmarks", "pto"), default="all")
-    parser.add_argument("--include-pto", action="store_true")
+    parser.add_argument("--stage", choices=("all", "environment", "regression", "examples", "soak", "benchmarks", "pto",
+                                          "pto-soak", "pto-benchmarks"), default="all")
+    parser.add_argument("--include-pto", action="store_true", help="Add the complete, independent PTO workflow")
     parser.add_argument("--soak-seconds", type=float, default=1800)
     parser.add_argument("--min-calls", type=int, default=10000)
     args = parser.parse_args()
-    if args.soak_seconds < 0 or args.min_calls < 1:
-        parser.error("soak-seconds must be nonnegative and min-calls must be positive")
+    if not math.isfinite(args.soak_seconds) or args.soak_seconds < 0 or args.min_calls < 1:
+        parser.error("soak-seconds must be finite and nonnegative and min-calls must be positive")
     try:
         args.physical_device = select_device(args.physical_device, os.environ.get("ASCEND_RT_VISIBLE_DEVICES"))
         output = prepare_output(args.output)
@@ -261,51 +392,75 @@ def main():
     print(f"Artifacts: {output}", flush=True)
     python = sys.executable
     records = []
+    reports = {}
+    # Record metadata for partial invocations too; every artifact can identify
+    # its Python package, compiler revision and actual loaded native libraries.
+    environment(output, args.physical_device)
 
     def selected(stage):
         return args.stage in ("all", stage)
 
-    def pytest(name, paths, *options):
-        return run_command(output, name, [python, "-m", "pytest", *paths, "-q", "--tb=short", "-ra",
-                                          f"--junitxml={output / (name + '.xml')}", *options])
+    def pytest(directory, name, paths, *options):
+        return run_command(directory, name, [python, "-m", "pytest", *paths, "-q", "--tb=short", "-ra",
+                                             f"--junitxml={directory / (name + '.xml')}", *options])
 
-    if selected("environment"):
-        environment(output, args.physical_device)
-    if selected("regression"):
-        records.append(pytest("ascendc", ["tests"], "-m", "not pto"))
-    if selected("examples"):
-        records.append(pytest("examples", ["examples/ascend"], "--device", "npu:0", "--seed", "0"))
-    if selected("soak"):
-        records.append(run_command(output, "soak", [python, "scripts/npu_soak.py", "--seconds", str(args.soak_seconds),
-                       "--min-calls", str(args.min_calls), "--output", str(output / "soak.json")],
-                       timeout=max(1800, args.soak_seconds + 900)))
-    if selected("benchmarks"):
-        for workload, dtype, dimensions in (
-            ("elementwise", "float16", ["--rows", "1024", "--cols", "1024"]),
-            ("gemm_epilogue", "bfloat16", ["--rows", "128", "--cols", "192", "--k", "256"]),
-        ):
-            for process in range(3):
-                name = f"{workload}-{process}"
-                records.append(run_command(output, name, [python, "examples/ascend/torch_compile.py", "--workload", workload,
-                               "--dtype", dtype, *dimensions, "--device", "npu:0", "--seed", "0", "--bench", "--repeats", "5",
-                               "--output", str(output / f"{name}.json")], device_snapshots=True))
-        summarize_benchmarks(output)
-    if args.stage == "pto" or (args.stage == "all" and args.include_pto):
-        records.append(pytest("pto-codegen", ["tests/ascend"], "-m", "pto and not ascend"))
-        runtime = pytest("pto-runtime", ["tests/ascend"], "-m", "pto and ascend", "--ignore=tests/ascend/test_pto_cache.py")
-        records.append(runtime)
-        if runtime["acceptance_passed"]:
-            records.append(pytest("pto-cache", ["tests/ascend/test_pto_cache.py"], "-m", "pto"))
-        else:
-            blocked = {"name": "pto-cache", "status": "blocked", "exit_code": -1,
-                       "reason": "PTO runtime acceptance did not pass; cache restoration was not attempted"}
-            records.append(blocked)
-            with (output / "commands.jsonl").open("a") as manifest:
-                manifest.write(json.dumps(blocked) + "\n")
+    if args.stage in ("all", "regression", "examples", "soak", "benchmarks"):
+        directory = output / "ascendc"
+        directory.mkdir(exist_ok=True)
+        ascendc = []
+        if selected("regression"):
+            ascendc.append(pytest(directory, "ascendc", ["tests"], "-m", "not pto"))
+        if selected("examples"):
+            ascendc.append(pytest(directory, "examples", ["examples/ascend"], "--device", "npu:0", "--seed", "0"))
+        if selected("soak"):
+            ascendc.append(run_soak(directory, "soak", python, args))
+        if selected("benchmarks"):
+            ascendc.extend(run_benchmarks(directory, python))
+        records.extend(ascendc)
+        reports["ascendc"] = backend_report(directory, ascendc, "full" if args.stage == "all" else "partial")
+
+    if args.stage.startswith("pto") or (args.stage == "all" and args.include_pto):
+        directory = output / "pto"
+        directory.mkdir(exist_ok=True)
+        pto = []
+        full = args.stage in ("all", "pto")
+        blocked_reason = None
+
+        def stage(name, action):
+            nonlocal blocked_reason
+            if blocked_reason:
+                record = {"name": name, "status": "blocked", "exit_code": -1, "reason": blocked_reason}
+                with (directory / "commands.jsonl").open("a") as manifest:
+                    manifest.write(json.dumps(record) + "\n")
+                pto.append(record)
+                return
+            record = action()
+            pto.append(record)
+            if not command_passed(record):
+                blocked_reason = f"{name} did not pass; dependent PTO stages were not attempted"
+
+        if full:
+            stage("pto-codegen", lambda: pytest(directory, "pto-codegen", ["tests/ascend"], "-m", "pto and not ascend"))
+            stage("pto-runtime", lambda: pytest(directory, "pto-runtime", ["tests/ascend"], "-m", "pto and ascend",
+                                               "--ignore=tests/ascend/test_pto_cache.py"))
+            stage("pto-cache", lambda: pytest(directory, "pto-cache", ["tests/ascend/test_pto_cache.py"], "-m", "pto"))
+        if full or args.stage == "pto-soak":
+            stage("pto-soak", lambda: run_soak(directory, "pto-soak", python, args, pto=True))
+        if full or args.stage == "pto-benchmarks":
+            if blocked_reason:
+                stage("pto-benchmarks", lambda: None)
+            else:
+                pto.extend(run_benchmarks(directory, python, pto=True))
+        records.extend(pto)
+        reports["pto"] = backend_report(directory, pto, "full" if full else "partial")
+
+    report = {"recorded_at": now(), "stage": args.stage, "environment": "environment.json", "backends": reports}
+    (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     (output / f"{args.stage}-commands.json").write_text(json.dumps(records, indent=2) + "\n")
-    # PTO is independently reported and never changes the AscendC result.
-    required = records if args.stage == "pto" else [row for row in records if not row["name"].startswith("pto")]
-    sys.exit(int(any(row["exit_code"] != 0 or row.get("acceptance_passed") is False for row in required)))
+    # Optional PTO does not change the AscendC exit status. Timing availability
+    # is reported independently; noisy comparisons never become speedups.
+    required = records if args.stage.startswith("pto") else [r for r in records if not r["name"].startswith("pto-")]
+    sys.exit(int(any(not command_passed(r) for r in required)))
 
 
 if __name__ == "__main__":

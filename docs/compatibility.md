@@ -80,3 +80,9 @@ compiler as well as using its matching Python package. The tested combination
 and validation limits are recorded in
 [verification](verification.md#pto-compiler-fixes-2026-11-14); they do not establish
 a general PTO release-version range.
+
+With this fixed compiler, the unified PTO source/runtime/cache gate and a
+30-minute strict fixed-shape soak passed on the recorded environment. The
+subsequent timing batch was blocked by other device processes; end-to-end
+performance acceptance remains open. See the
+[unified PTO acceptance record](verification.md#unified-pto-acceptance-2026-11-16).

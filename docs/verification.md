@@ -302,6 +302,64 @@ The second runs source generation, device correctness, and then fresh-process
 cache restoration when the full runtime gate passes. Neither command changes
 the compiler checkout or installs a dependency automatically.
 
+## Unified PTO acceptance (2026-11-16)
+
+The repository now owns the complete PTO workflow, including its soak and
+performance stages. This run used the same fixed TileLang revision
+`de9c512609dffe7956b2e0a1a395fed6c1e7e923` and matching Python/native libraries
+as the compiler-fix record above. The saved harness SHA-256 values match the
+scripts used for this acceptance.
+
+The script unit tests passed **166 tests**, with one skip for the optional
+typed profiler-error interface. The focused verification set passed **53
+tests**, covering unchanged no-argument defaults, PTO parameter forwarding,
+prerequisite failure/skip handling, partial-stage reporting, adapter/fallback
+validation, memory growth, incomplete timing and interference before/after a
+benchmark process. Ruff and `git diff --check` passed.
+
+Both real-device smoke checks passed all 11 model/dtype cases: PTO completed
+**2310 measured calls in 5.30 seconds**, and default AscendC completed
+**2596 calls in 5.41 seconds**. Both report `long_soak_accepted=false`.
+
+The complete PTO invocation then passed source generation (**23 tests**),
+device runtime (**99 tests**) and fresh-process cache restoration (**2 tests**),
+with no skips. Its strict, unfused soak passed **1800.26 measured seconds and
+1,031,855 graph calls**, excluding compilation and warmup. Each of the 11
+cases reports 93,815 compiled calls including its ten warmup calls. Every
+partition resolved to PTO/PTO, with zero fallback calls. Every measured call
+checked numerical results, preservation of the previous output and explicit
+default/non-default stream dependencies.
+
+All **61** synchronized memory samples reported **104,960 live allocated
+bytes** and **41,943,040 reserved bytes**. The long-soak requirement passed.
+The run used an explicitly selected, user-authorized card with other resident
+processes; it does not establish exclusive-device performance. Health probes
+reported `Health Status: OK`; the pre-existing HBM RAS configuration status
+code was retained in the health records.
+
+Before the first performance process, the occupancy check detected other
+processes and stopped sampling without launching that process. The other
+authorized card also had a resident process. Neither workload has new timing
+samples from this run, and no old samples were reused to fill them. The full
+workflow exited nonzero, with the report explicitly recording:
+
+- `correctness: passed`;
+- `long_soak_accepted: true`;
+- `execution_passed: false` and `timing_comparisons: inconclusive`;
+- both workload timing summaries marked `incomplete`, with the command's
+  device snapshots and interference reason retained.
+
+The next hardware action is a partial performance rerun on an idle authorized
+card, using `python scripts/verify_npu.py --stage pto-benchmarks`. This runs the
+same six-process protocol and does not repeat the 30-minute soak. Until valid
+wall comparisons exist, the earlier 1.662x GEMM device result remains the only
+accepted fused-versus-Torch comparison; it is not an end-to-end claim.
+
+Local logs, XML, environment/library fingerprints, script snapshots and JSON
+reports are retained under the artifact directory printed by the driver:
+`pto-acceptance-20261116.gWW7PJ`, with `smoke/`, `ascendc-smoke/` and `full/`
+subdirectories. The artifact directory is outside the source checkout.
+
 ## Reproducing hardware acceptance
 
 No arguments are required:
@@ -328,17 +386,46 @@ check its availability first; explicit selection bypasses automatic probing.
 The default run records the environment, runs the non-PTO regression suite and
 functional examples, executes a 30-minute soak with at least 10000 measured
 calls, and benchmarks two workloads. `--include-pto` adds an independent PTO
-audit. A failing PTO audit is recorded without changing the AscendC exit status;
-`--stage pto` returns failure when the standalone PTO audit fails. Select one
-stage with `--stage environment|regression|examples|soak|benchmarks|pto`.
+workflow with source generation, device runtime, fresh-process cache restoration,
+a separate 30-minute soak and performance measurements. Failure of a prerequisite
+blocks the dependent PTO stages. A failing optional PTO workflow is recorded
+without changing the AscendC exit status.
 
-The output directory contains exact commands, timestamps and exit codes in
-`commands.jsonl`, full logs, pytest XML with individual skip reasons, environment
-and toolchain metadata, loaded native-library SHA-256 digests, and copies of the
-verification scripts. Benchmark commands also record device process snapshots
-before and after execution; these checks do not reserve the card. Hardware-test
-skips prevent acceptance even when pytest
-exits successfully. Skipped unit tests remain explicitly reported.
+Run the complete standalone PTO workflow with `--stage pto`; it returns failure
+if any required command, correctness check, soak or benchmark execution fails.
+Timing noise is reported separately and does not change command success into a
+failure or a speedup claim. Select a partial rerun with
+`--stage environment|regression|examples|soak|benchmarks|pto-soak|pto-benchmarks`.
+The last two run only the selected PTO stage; neither establishes a complete
+PTO gate. For a quick PTO soak probe, use:
+
+```bash
+python scripts/verify_npu.py --stage pto-soak --soak-seconds 5 --min-calls 100
+```
+
+A short probe cannot set `long_soak_accepted`: that requires at least 1800
+measured seconds and 10000 calls, regardless of a successful command exit.
+
+Every invocation records environment and toolchain metadata, source revisions,
+loaded native-library SHA-256 digests and copies of the verification scripts at
+the output root. `ascendc/` and `pto/` contain their own exact commands,
+timestamps and exit codes in `commands.jsonl`, full logs, pytest XML with skip
+reasons, soak results and timing JSON. `<stage>-commands.json` retains the
+invocation's command list at the root.
+
+`report.json` separates each backend's requested scope (`full` workflow or
+`partial` rerun), execution success, correctness, long-soak acceptance and timing
+comparison availability. A full workflow may still fail or have inconclusive
+timing; scope describes coverage requested, not a production-readiness claim.
+Hardware-test skips prevent acceptance even when pytest exits successfully.
+Skipped unit tests remain explicitly reported.
+
+Benchmark commands record health and process snapshots before and after each
+process. An unconfirmed health/activity probe or another process on the selected
+card stops further sampling and invalidates that batch. The driver's own idle
+metadata context is allowed. These checks do not reserve the card and cannot
+exclude interference that starts and ends between snapshots. No other user's
+process is terminated.
 
 `scripts/npu_soak.py` tests elementwise, Softmax and RMSNorm in fp16/bf16/fp32,
 and GEMM+bias+ReLU in fp16/bf16. After warming all input modes and both streams,
@@ -346,7 +433,10 @@ it alternates default and non-default streams with explicit dependencies.
 Every call checks the Torch reference and preservation of the preceding output.
 Inputs cycle through random, zero, large finite and, outside GEMM, NaN/Inf
 values. Compilation is strict, fusion is disabled, and final reports require
-actual AscendC calls with no fallback. Every 30 seconds the script synchronizes
+actual calls through the requested backend with no fallback and consistent
+compiled-call counts. The standalone soak accepts `--target` and
+`--execution-backend`; defaults retain AscendC/automatic selection, while the PTO
+driver passes `--target pto --execution-backend pto`. Every 30 seconds it synchronizes
 and records live allocated and reserved NPU bytes. Live allocations may not
 exceed the warmed baseline by more than 1 MiB; reserved allocator cache is
 reported separately. Compilation/warmup do not count toward the 30 minutes.

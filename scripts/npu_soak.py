@@ -10,15 +10,16 @@ import argparse
 from dataclasses import asdict
 import gc
 import json
+import math
 from pathlib import Path
 import time
 import traceback
 
 import torch
-import torch_npu  # noqa: F401
 
 from torch_tilelang import GraphConfig, make_backend
 from torch_tilelang.fusion import _assert_outputs_close
+from torch_tilelang.compat.tilelang import resolve_graph_context, resolved_config
 
 
 def elementwise(x, bias, scale):
@@ -38,7 +39,7 @@ def gemm(x, weight, bias):
     return torch.relu(x @ weight + bias)
 
 
-def make_cases(device):
+def make_cases(device, config):
     cases = []
     for dtype in (torch.float16, torch.bfloat16, torch.float32):
         def rand(*shape):
@@ -53,7 +54,7 @@ def make_cases(device):
             definitions.append((gemm, [rand(32, 64), rand(64, 64), rand(64)]))
         for model, inputs in definitions:
             reports = []
-            backend = make_backend(GraphConfig(strict=True, fusion="off"))
+            backend = make_backend(config)
 
             def capture(graph, example_inputs, reports=reports, backend=backend):
                 runner = backend(graph, example_inputs)
@@ -112,14 +113,38 @@ def memory_sample(start, calls):
     }
 
 
+def validate_memory_samples(samples):
+    baseline = samples[0]["allocated_bytes"]
+    if any(sample["allocated_bytes"] > baseline + 1024 * 1024 for sample in samples[1:]):
+        raise AssertionError("Live NPU allocations grew by more than 1 MiB after warmup")
+
+
+def validate_case(case, expected_backend, expected_execution):
+    partitions = [partition for report in case["reports"] for partition in report.partitions]
+    if not partitions or any(
+        not p.compiled or p.fallback_calls or (p.target_backend, p.execution_backend) != (expected_backend, expected_execution)
+        for p in partitions
+    ):
+        raise AssertionError(f"{case['name']} did not consistently use {expected_backend}/{expected_execution} kernels")
+    if sum(p.compiled_calls for p in partitions) != case["calls"]:
+        raise AssertionError(f"{case['name']} has unexpected compiled call counts")
+    return {"name": case["name"], "calls_including_warmup": case["calls"], "partitions": [asdict(p) for p in partitions]}
+
+
 def run(args, result):
+    import torch_npu  # noqa: F401
+
+    config = GraphConfig(target=args.target, execution_backend=args.execution_backend, strict=True, fusion="off")
+    context = resolve_graph_context(config)
+    config = resolved_config(config, context)
+    result.update(target=config.target, target_backend=context.module.name, execution_backend=context.execution_backend.name)
     device = torch.device("npu:0")
     torch.npu.set_device(device)
     torch.manual_seed(args.seed)
     default = torch.npu.current_stream()
     alternate = torch.npu.Stream()
     with torch.no_grad():
-        cases = make_cases(device)
+        cases = make_cases(device, config)
         # Warm every input mode and both streams before measuring memory/time.
         for step in range(10):
             for case in cases:
@@ -142,20 +167,13 @@ def run(args, result):
                 args.output.with_suffix(".progress.json").write_text(json.dumps(sample, indent=2) + "\n")
                 next_sample = sample["elapsed_seconds"] + 30
         samples.append(memory_sample(start, calls))
-        baseline = samples[0]["allocated_bytes"]
         # Same live input/output shapes after warmup: retained device tensors
         # must not grow. Reserved allocator caches are recorded independently.
-        if any(sample["allocated_bytes"] > baseline + 1024 * 1024 for sample in samples[1:]):
-            raise AssertionError("Live NPU allocations grew by more than 1 MiB after warmup")
+        validate_memory_samples(samples)
         result.update(elapsed_seconds=time.monotonic() - start, calls=calls, memory_samples=samples, cases=[])
         for case in cases:
-            partitions = [partition for report in case["reports"] for partition in report.partitions]
-            if not partitions or any(not p.compiled or p.fallback_calls or p.execution_backend != "tvm_ffi" for p in partitions):
-                raise AssertionError(f"{case['name']} did not consistently use AscendC kernels")
-            if sum(p.compiled_calls for p in partitions) != case["calls"]:
-                raise AssertionError(f"{case['name']} has unexpected compiled call counts")
-            result["cases"].append({"name": case["name"], "calls_including_warmup": case["calls"],
-                                    "partitions": [asdict(p) for p in partitions]})
+            result["cases"].append(validate_case(case, context.module.name, context.execution_backend.name))
+        result["long_soak_accepted"] = result["elapsed_seconds"] >= 1800 and calls >= 10000
         result["status"] = "passed"
 
 
@@ -164,10 +182,12 @@ def main():
     parser.add_argument("--seconds", type=float, default=1800)
     parser.add_argument("--min-calls", type=int, default=10000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--target", default=GraphConfig().target)
+    parser.add_argument("--execution-backend", choices=("auto", "tvm_ffi", "pto"), default="auto")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if args.seconds < 0 or args.min_calls < 1:
-        parser.error("seconds must be nonnegative and min-calls must be positive")
+    if not math.isfinite(args.seconds) or args.seconds < 0 or args.min_calls < 1:
+        parser.error("seconds must be finite and nonnegative and min-calls must be positive")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     result = {"status": "failed", "requested_seconds": args.seconds, "minimum_calls": args.min_calls, "seed": args.seed}
     try:

@@ -105,8 +105,17 @@ This selects the first idle, healthy NPU inside the visible allocation and
 creates a unique result directory beside the checkout under
 `torch-tilelang-artifacts/`. It runs the regression suite, functional examples,
 a 30-minute soak and three-process performance measurements. Override the
-device or output with `--physical-device` or `--output`; add `--include-pto`
-for the independent PTO audit. See
+device or output with `--physical-device` or `--output`. Add `--include-pto`
+for an independent PTO workflow, including its own 30-minute soak and six
+performance processes. Run just that complete workflow with:
+
+```bash
+python scripts/verify_npu.py --stage pto
+```
+
+Use `--stage pto-soak` or `--stage pto-benchmarks` for partial reruns. Results
+separate correctness, long-soak acceptance and timing availability; noisy timing
+does not establish a speedup. See
 [verification](docs/verification.md) for stage selection, recorded NPU results
 and the remaining compatibility/performance blockers.
 
