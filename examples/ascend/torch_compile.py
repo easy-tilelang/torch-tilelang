@@ -82,8 +82,7 @@ def main():
     parser.add_argument("--device", default="npu:0")
     parser.add_argument(
         "--target",
-        default=GraphConfig().target,
-        help="Ascend target alias or JSON object; use pto for PTO code generation",
+        help="Compiler target (ascendc, pto or an Ascend JSON target). Overrides TILELANG_DEFAULT_TARGET.",
     )
     parser.add_argument(
         "--execution-backend",
@@ -118,7 +117,9 @@ def main():
             torch.randn(args.cols, device=device, dtype=dtype),
         ]
     mod = fx_to_relax(torch.fx.symbolic_trace(selected_model), inputs)
-    execution_options = {"target": args.target, "execution_backend": args.execution_backend, "strict": True}
+    execution_options = {"execution_backend": args.execution_backend, "strict": True}
+    if args.target is not None:
+        execution_options["target"] = args.target
     default_config = GraphConfig(tile_size=args.default_tile, **execution_options)
     candidate_config = GraphConfig(tile_size=args.candidate_tile, **execution_options)
     variants = {

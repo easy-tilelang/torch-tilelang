@@ -9,6 +9,13 @@ from scripts import verify_npu
 from scripts.verify_npu import run_command, summarize_benchmarks
 
 
+def test_hardware_checks_run_with_their_own_target(tmp_path, monkeypatch):
+    monkeypatch.setenv("TILELANG_DEFAULT_TARGET", "cuda")
+    monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", "2")
+    command = [sys.executable, "-c", "import os; assert 'TILELANG_DEFAULT_TARGET' not in os.environ"]
+    assert run_command(tmp_path, "target", command)["exit_code"] == 0
+
+
 @pytest.mark.parametrize("fault", [None, "noise", "nonfinite", "missing"])
 def test_benchmark_evidence_requires_three_complete_stable_processes(tmp_path, fault):
     for workload in ("elementwise", "gemm_epilogue"):

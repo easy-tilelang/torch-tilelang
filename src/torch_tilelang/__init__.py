@@ -1,6 +1,6 @@
 """Experimental Torch-managed Ascend graph compilation.
 
-Install this package to expose ``backend="torch_tilelang_ascend"`` through
+Install this package to expose ``backend="tilelang"`` through
 Torch Dynamo's package entry-point discovery. Import this module for the
 programmatic configuration and backend factory API.
 """

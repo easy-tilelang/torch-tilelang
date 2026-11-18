@@ -29,7 +29,7 @@ def test_torch_compile_gemm_bias_relu(device, dtype, seed):
     model = GemmBiasRelu(64, 64).eval().to(device=device, dtype=dtype)
     compiled = torch.compile(
         model,
-        backend="torch_tilelang_ascend",
+        backend="tilelang",
         fullgraph=True,
         dynamic=False,
         options={"strict": True, "fusion": "off"},

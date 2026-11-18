@@ -292,13 +292,13 @@ def _fallback(gm: fx.GraphModule, reason: str):
 
 def make_backend(config: GraphConfig | None = None) -> Callable:
     """Create a Dynamo backend with an immutable compilation configuration."""
-    config = config or GraphConfig()
-
     def backend(gm: fx.GraphModule, example_inputs, **kwargs):
-        options = kwargs.pop("options", None)
+        options = kwargs.pop("options", None) or {}
         if kwargs:
             raise ValueError(f"Unsupported graph backend arguments: {sorted(kwargs)}")
-        local_config = replace(config, **options) if options else config
+        # Resolve environment defaults when Dynamo compiles the graph, even
+        # if the named entry point was already loaded earlier in the process.
+        local_config = GraphConfig(**options) if config is None else replace(config, **options)
         context = _resolve_graph_context(local_config)
         local_config = _resolved_config(local_config, context)
         if _has_unsafe_effects(gm):

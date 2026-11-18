@@ -16,8 +16,14 @@ def model(x, bias):
     return torch.relu(x + bias) * bias
 
 # Discovered through the installed torch_dynamo_backends entry point.
-compiled = torch.compile(model, backend="torch_tilelang_ascend")
+compiled = torch.compile(model, backend="tilelang")
 ```
+
+Select AscendC or PTO with `options={"target": "ascendc"}` or
+`options={"target": "pto"}`. An explicit target takes precedence over
+`TILELANG_DEFAULT_TARGET`. With neither set, the backend uses AscendC for
+`dav-3510`. CUDA is currently unsupported. The former backend name
+`torch_tilelang_ascend` remains available as an alias.
 
 ## Installation
 
@@ -28,6 +34,9 @@ build with its bundled TVM/Relax first. Then install this package:
 python -m pip install --no-deps -e .
 ```
 
+Rerun this command when upgrading an editable checkout to register the new
+`tilelang` backend name, then start a fresh Python process.
+
 The package itself is Python-only. NPU execution also requires CANN and the
 compiler toolchain for the selected backend. See the
 [compatibility guide](docs/compatibility.md) for compiler revisions and
@@ -36,7 +45,7 @@ dependencies, and the [Ascend guide](docs/ascend.md) for backend options.
 ## Functional examples
 
 With pytest installed in the compatible environment, run all four standalone
-examples through the installed `torch_tilelang_ascend` backend:
+examples through the installed `tilelang` backend:
 
 ```bash
 python -m pytest examples/ascend -q
@@ -61,6 +70,7 @@ Each script can also run directly with the same optional arguments:
 ```bash
 python examples/ascend/test_torch_compile_rmsnorm.py
 python examples/ascend/test_torch_compile_rmsnorm.py --device npu:1 --dtype float32
+TILELANG_DEFAULT_TARGET=pto python examples/ascend/test_torch_compile_rmsnorm.py
 ```
 
 The examples use strict compilation with fusion disabled. For each supported

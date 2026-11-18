@@ -109,7 +109,7 @@ def environment(output, physical_device):
         "device_name": torch.npu.get_device_name(0), "device_properties": str(torch.npu.get_device_properties(0)),
         "versions": {}, "toolchain": {}, "native_libraries": {}, "backend_contexts": {},
         "environment": {key: os.environ.get(key) for key in (
-            "ASCEND_HOME_PATH", "ASCEND_TOOLKIT_HOME", "TILELANG_CACHE_DIR", "TILELANG_DISABLE_CACHE", "TMPDIR",
+            "ASCEND_HOME_PATH", "ASCEND_TOOLKIT_HOME", "TILELANG_DEFAULT_TARGET", "TILELANG_CACHE_DIR", "TILELANG_DISABLE_CACHE", "TMPDIR",
         )},
         "repository": capture(["git", "rev-parse", "HEAD"]),
         "repository_status": capture(["git", "status", "--short"]),
@@ -136,7 +136,7 @@ def environment(output, physical_device):
         source = ROOT / "scripts" / name
         shutil.copyfile(source, harness / name)
         result["harness_sha256"][name] = hashlib.sha256(source.read_bytes()).hexdigest()
-    for target, execution in ((GraphConfig().target, "tvm_ffi"), ("pto", "pto")):
+    for target, execution in (("ascendc", "tvm_ffi"), ("pto", "pto")):
         try:
             context = resolve_graph_context(GraphConfig(target=target, execution_backend=execution))
             result["backend_contexts"][execution] = {
@@ -167,6 +167,10 @@ def device_problem(activity, health):
 
 def run_command(output, name, command, timeout=1800, device_snapshots=False, validator=None):
     start = time.monotonic()
+    # Stages exercise the package default (AscendC) or select PTO explicitly.
+    # Keep the caller's default target from redirecting a named hardware check.
+    child_env = os.environ.copy()
+    child_env.pop("TILELANG_DEFAULT_TARGET", None)
     record = {"name": name, "command": command, "cwd": str(ROOT), "started_at": now(),
               "visible_devices": os.environ["ASCEND_RT_VISIBLE_DEVICES"]}
     if device_snapshots:
@@ -177,7 +181,9 @@ def run_command(output, name, command, timeout=1800, device_snapshots=False, val
         try:
             if device_snapshots and (problem := device_problem(record["device_before"], record["health_before"])):
                 raise RuntimeError(problem)
-            with subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True) as process:
+            with subprocess.Popen(
+                command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=child_env
+            ) as process:
                 record["pid"] = process.pid
                 try:
                     record["exit_code"] = process.wait(timeout=timeout)

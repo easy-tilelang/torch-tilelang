@@ -29,7 +29,7 @@ def test_torch_compile_elementwise(device, dtype, seed):
     model = BiasReluScale(65).eval().to(device=device, dtype=dtype)
     compiled = torch.compile(
         model,
-        backend="torch_tilelang_ascend",
+        backend="tilelang",
         fullgraph=True,
         dynamic=False,
         options={"strict": True, "fusion": "off"},

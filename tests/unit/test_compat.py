@@ -72,6 +72,11 @@ def test_graph_adapter_policy_is_independent_of_tilelang_auto_preference(monkeyp
     assert config.execution_backend == requested
 
 
+def test_explicit_ascendc_does_not_switch_to_pto_execution():
+    with pytest.raises(ValueError, match="ascendc.*tvm_ffi"):
+        graph_tilelang.resolve_graph_context(GraphConfig(target="ascendc", execution_backend="pto"))
+
+
 def test_graph_rejects_explicit_pto_tvm_ffi_even_when_tilelang_allows_it(monkeypatch):
     import tilelang.backend
 

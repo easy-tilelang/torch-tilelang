@@ -232,16 +232,24 @@ def test_profiled_torch_compile_records_fusion_decision(target, execution_backen
 
 
 @tilelang.testing.requires_ascend
-@pytest.mark.pto
-@pytest.mark.parametrize("execution_backend", ["auto", "pto"])
-def test_public_torch_compile_options_select_pto_adapter(monkeypatch, execution_backend):
+@pytest.mark.parametrize(
+    "env_target,options,expected_adapter",
+    [
+        pytest.param("pto", {"target": "ascendc"}, "tvm_ffi", id="explicit-ascendc"),
+        pytest.param("ascendc", {"target": "pto"}, "pto", id="explicit-pto", marks=pytest.mark.pto),
+        pytest.param("pto", {}, "pto", id="environment-pto", marks=pytest.mark.pto),
+        pytest.param("ascendc", {"target": "pto", "execution_backend": "pto"}, "pto", id="explicit-pto-adapter", marks=pytest.mark.pto),
+    ],
+)
+def test_public_torch_compile_target_selection(monkeypatch, env_target, options, expected_adapter):
     torch._dynamo.reset()
+    monkeypatch.setenv("TILELANG_DEFAULT_TARGET", env_target)
     kernels = _capture_kernels(monkeypatch)
     compiled = torch.compile(
         _model,
-        backend="torch_tilelang_ascend",
+        backend="tilelang",
         fullgraph=True,
-        options={"target": "pto", "execution_backend": execution_backend, "strict": True},
+        options={**options, "strict": True},
     )
     x = torch.randn(7, 65, device="npu")
     bias = torch.randn(65, device="npu")
@@ -249,7 +257,9 @@ def test_public_torch_compile_options_select_pto_adapter(monkeypatch, execution_
     actual = compiled(x, bias)
     torch.testing.assert_close(actual, _model(x, bias))
     assert len(kernels) == 3
-    _assert_kernel_backends(kernels, "pto")
+    _assert_kernel_backends(kernels, expected_adapter)
+    if options.get("target") == "ascendc":
+        assert all(kernel.backend_context.target.attrs["mcpu"] == "dav-3510" for kernel in kernels)
 
 
 _SCALAR_CASES = [

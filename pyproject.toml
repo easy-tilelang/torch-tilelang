@@ -21,6 +21,7 @@ Documentation = "https://github.com/easy-tilelang/torch-tilelang/blob/main/docs/
 test = ["pytest>=8", "ruff"]
 
 [project.entry-points."torch_dynamo_backends"]
+tilelang = "torch_tilelang.backend:tilelang_backend"
 torch_tilelang_ascend = "torch_tilelang.backend:tilelang_backend"
 
 [tool.setuptools.packages.find]

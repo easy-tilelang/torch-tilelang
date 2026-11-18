@@ -1,6 +1,6 @@
 # Ascend Torch graph compilation
 
-The experimental `torch_tilelang_ascend` Dynamo backend compiles supported inference
+The experimental `tilelang` Dynamo backend compiles supported inference
 partitions through FX, Relax, scalar TIR, and Ascend TileLang scheduling. Torch
 owns GM tensors between kernels. Kernel compilation and execution reuse either
 the AscendC compiler and `tvm_ffi` adapter, or PTODSL code generation and the
@@ -25,7 +25,7 @@ def model(x, bias):
     return torch.relu(x + bias) * bias
 
 
-compiled = torch.compile(model, backend="torch_tilelang_ascend")
+compiled = torch.compile(model, backend="tilelang")
 x = torch.randn(7, 65, device="npu", dtype=torch.float32)
 bias = torch.randn(65, device="npu", dtype=torch.float32)
 with torch.no_grad():
@@ -37,16 +37,17 @@ Installing `torch-tilelang` makes the Dynamo backend discoverable. Backend optio
 are captured by an immutable `torch_tilelang.GraphConfig`; pass fields through
 `torch.compile(options=...)` or `torch_tilelang.make_backend(config)`.
 
-The default compilation target is `{"kind": "ascend", "mcpu": "dav-3510"}` and
-`execution_backend` defaults to `"auto"`. Select an explicitly supported target
-for the machine running the graph. The same `torch_tilelang_ascend` graph backend
-supports both AscendC and PTO:
+Set `target` to `"ascendc"` or `"pto"` to select the compiler for a graph.
+An explicit target takes precedence over `TILELANG_DEFAULT_TARGET`. With
+neither set, the default is `{"kind": "ascend", "mcpu": "dav-3510"}`
+with `execution_backend="auto"`. The older backend name
+`torch_tilelang_ascend` remains an alias. CUDA targets are currently unsupported.
 
 ```python
 compiled = torch.compile(
     model,
-    backend="torch_tilelang_ascend",
-    options={"target": "pto", "execution_backend": "pto"},
+    backend="tilelang",
+    options={"target": "pto"},
 )
 ```
 
@@ -56,7 +57,8 @@ with `"auto"` resolves to the `pto` variant and adapter. Explicit
 `target="ascend", execution_backend="pto"` also selects PTO, preserving target
 attributes such as `mcpu`. To keep an explicit architecture while selecting PTO,
 pass a JSON target string and `execution_backend="pto"` through graph options.
-`target="pto", execution_backend="tvm_ffi"` is incompatible and is rejected.
+The backend rejects conflicting pairs such as `target="pto", execution_backend="tvm_ffi"`
+and `target="ascendc", execution_backend="pto"`.
 
 PTO kernel compilation requires PTODSL, `ptoas`, and the compatible Bisheng/CANN
 toolchain used by the existing PTO adapter. Source-only PTO generation is a
@@ -132,7 +134,7 @@ Fusion is off by default. Enable measured selection with:
 ```python
 compiled = torch.compile(
     model,
-    backend="torch_tilelang_ascend",
+    backend="tilelang",
     options={"fusion": "profile", "min_speedup": 0.05, "max_regression": 0.02},
 )
 ```

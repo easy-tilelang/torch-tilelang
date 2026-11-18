@@ -11,8 +11,9 @@ from torch._dynamo.backends.registry import lookup_backend
 
 def main():
     assert "torch_tilelang" not in sys.modules
-    backend = lookup_backend("torch_tilelang_ascend")
+    backend = lookup_backend("tilelang")
     assert backend.__module__ == "torch_tilelang.backend"
+    assert lookup_backend("torch_tilelang_ascend").__module__ == "torch_tilelang.backend"
 
     import tilelang
     import torch_tilelang
@@ -26,7 +27,7 @@ def main():
     def model(x):
         return torch.relu(x + 1)
 
-    compiled = torch.compile(model, backend="torch_tilelang_ascend", fullgraph=True)
+    compiled = torch.compile(model, backend="tilelang", fullgraph=True)
     x = torch.arange(-4.0, 4.0)
     torch.testing.assert_close(compiled(x), model(x))
     print(json.dumps({"package": str(package), "tilelang": tilelang.__file__, "backend": backend.__module__}))

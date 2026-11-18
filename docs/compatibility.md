@@ -31,13 +31,15 @@ validation. Include the CANN build identifier when reporting this issue.
 
 ## Backend selection
 
-Use the `torch_tilelang_ascend` Dynamo entry point or configure a backend with
+Use the `tilelang` Dynamo entry point or configure a backend with
 `GraphConfig` and `make_backend`. The lower-level `fx_to_relax`, `build_runner`
 and schedule functions are experimental.
 
-The default target is `{"kind": "ascend", "mcpu": "dav-3510"}`. Set the target
-architecture explicitly for a different device. The graph backend checks for
-the selected native code generator before partitioning the graph.
+Set `options={"target": "ascendc"}` or `options={"target": "pto"}` to override
+`TILELANG_DEFAULT_TARGET` for a graph. With neither set, the target is
+`{"kind": "ascend", "mcpu": "dav-3510"}`. Set the target architecture explicitly
+for a different device. The graph backend checks for the selected native code
+generator before partitioning the graph.
 
 | Target variant | Adapter selected by `execution_backend="auto"` | Required native code generator |
 | --- | --- | --- |

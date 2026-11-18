@@ -1,8 +1,10 @@
 # Ascend 后端的编译与执行流程
 
-使用 `torch.compile(..., backend="torch_tilelang_ascend")` 时，TorchDynamo 捕获模型的计算过程，生成 FX 图。Ascend 后端从图中选出可以编译的算子，将它们组成一个或多个分区。每个分区第一次收到实际输入时，后端才调用 TileLang 编译在 NPU 上运行的计算内核（kernel）。后续调用可以复用编译结果。[后端注册](../pyproject.toml) · [后端实现](../src/torch_tilelang/backend.py)
+使用 `torch.compile(..., backend="tilelang")` 时，TorchDynamo 捕获模型的计算过程，生成 FX 图。Ascend 后端从图中选出可以编译的算子，将它们组成一个或多个分区。每个分区第一次收到实际输入时，后端才调用 TileLang 编译在 NPU 上运行的计算内核（kernel）。后续调用可以复用编译结果。[后端注册](../pyproject.toml) · [后端实现](../src/torch_tilelang/backend.py)
 
 ## 从 FX 图到分区
+
+可以用 `options={"target": "ascendc"}` 或 `options={"target": "pto"}` 为单个图指定编译目标。省略 `target` 时读取环境变量 `TILELANG_DEFAULT_TARGET`，两者都未设置时使用面向 `dav-3510` 的 AscendC。旧后端名 `torch_tilelang_ascend` 仍可使用。当前支持的设备为 Ascend NPU，尚未支持 CUDA。
 
 后端先根据配置确定编译目标和执行适配器，再检查图中是否有影响分区安全的操作，例如原地修改张量。对于可以安全分区的图，后端用 `_CompiledPartition` 包装每个支持的分区，其余节点仍由 PyTorch 执行。一个分区可以包含多个内核。[分区逻辑](../src/torch_tilelang/backend.py)
 

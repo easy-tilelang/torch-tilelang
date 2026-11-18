@@ -1,12 +1,13 @@
 """Resolve existing TileLang targets and use its shared compiler/cache."""
 
 from dataclasses import replace
+import json
 
 import tilelang
 from tilelang import tvm
 from tvm.target import Target
 
-from ..config import GraphConfig
+from ..config import DEFAULT_ASCEND_TARGET, GraphConfig
 from ..frontend import UnsupportedGraphError
 
 
@@ -14,9 +15,17 @@ def resolve_graph_context(config: GraphConfig):
     """Validate the existing AscendC/PTO pair without probing the NPU."""
     from tilelang.backend import create_backend_context
 
+    target = config.target.strip()
+    kind = json.loads(target).get("kind") if target.startswith("{") else target.split()[0]
+    if kind not in ("ascend", "asc", "ascendc", "pto", "auto"):
+        raise UnsupportedGraphError(f"Unsupported TileLang graph target {kind!r}; supported targets are 'ascendc' and 'pto'")
+    if target == "ascendc":
+        if config.execution_backend == "pto":
+            raise ValueError("The 'ascendc' target requires 'tvm_ffi' or 'auto' execution")
+        target = DEFAULT_ASCEND_TARGET
     if "ascend" not in Target.list_kinds() or tvm.get_global_func("tl.TargetIsAscend", allow_missing=True) is None:
         raise UnsupportedGraphError("Ascend graph compilation is unavailable in this TileLang build; rebuild with USE_ASCEND=ON")
-    context = create_backend_context(config.target, execution_backend=config.execution_backend)
+    context = create_backend_context(target, execution_backend=config.execution_backend)
     if context.module.name == "pto":
         if config.execution_backend == "tvm_ffi":
             raise ValueError("Invalid execution backend 'tvm_ffi' for a PTO graph target; use 'pto' or 'auto'")
@@ -24,7 +33,7 @@ def resolve_graph_context(config: GraphConfig):
             # TileLang may prefer TVM-FFI for this codegen variant. Graph
             # execution requires its PTO adapter; resolve that pair explicitly
             # without changing TileLang's process-wide backend registry.
-            context = create_backend_context(config.target, execution_backend="pto")
+            context = create_backend_context(target, execution_backend="pto")
     codegen = {
         ("ascend", "tvm_ffi"): "target.build.tilelang_ascend",
         ("pto", "pto"): "target.build.tilelang_pto_without_compile",

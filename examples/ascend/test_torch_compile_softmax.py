@@ -19,7 +19,7 @@ def test_torch_compile_softmax(device, dtype, seed):
     model = torch.nn.Softmax(dim=-1).eval().to(device=device, dtype=dtype)
     compiled = torch.compile(
         model,
-        backend="torch_tilelang_ascend",
+        backend="tilelang",
         fullgraph=True,
         dynamic=False,
         options={"strict": True, "fusion": "off"},

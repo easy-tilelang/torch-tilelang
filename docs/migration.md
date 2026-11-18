@@ -27,8 +27,9 @@ at `7eb3edc8ba7b183c63681aa149a2e7512057d5ec`.
 
 ## Changes made during extraction
 
-- The Python namespace is `torch_tilelang`; Dynamo discovery uses the installed
-  `torch_tilelang_ascend` entry point. Import-time registration was removed so
+- The Python namespace is `torch_tilelang`. Dynamo discovers the installed
+  `tilelang` entry point and its compatibility alias `torch_tilelang_ascend`.
+  Import-time registration was removed so
   first-use entry-point loading cannot register the same name twice.
 - Target/compiler calls and profiler-error translation live in `compat/`.
   Kernels use TileLang's existing cache and receive caller-owned output buffers.

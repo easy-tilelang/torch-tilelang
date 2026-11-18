@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
+import os
+
+
+DEFAULT_ASCEND_TARGET = '{"kind": "ascend", "mcpu": "dav-3510"}'
 
 
 @dataclass(frozen=True)
 class GraphConfig:
     """Immutable options captured by a compiled FX graph.
 
-    Installing the package exposes ``backend="torch_tilelang_ascend"`` to
-    Torch Dynamo. Pass these fields through ``torch.compile(options=...)`` or
-    construct a backend with :func:`torch_tilelang.make_backend`.
+    Pass these fields through ``torch.compile(backend="tilelang", options=...)``
+    or construct a backend with :func:`torch_tilelang.make_backend`. An omitted
+    target uses TILELANG_DEFAULT_TARGET, defaulting to AscendC on dav-3510.
     """
 
-    target: str = '{"kind": "ascend", "mcpu": "dav-3510"}'
+    target: str = field(default_factory=lambda: os.environ.get("TILELANG_DEFAULT_TARGET", DEFAULT_ASCEND_TARGET))
     execution_backend: str = "auto"
     tile_size: int = 1024
     num_cores: int = 32
