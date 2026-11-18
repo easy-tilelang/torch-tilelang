@@ -28,14 +28,10 @@ build with its bundled TVM/Relax first. Then install this package:
 python -m pip install --no-deps -e .
 ```
 
-The package itself is Python-only. NPU execution additionally needs the CANN and
-compiler environment required by TileLang's AscendC/TVM-FFI backend. The tested
-TileLang revision and required interfaces are recorded in
-[compatibility](docs/compatibility.md). Optional PTO execution is described in
-[the Ascend guide](docs/ascend.md).
-
-See [the Ascend guide](docs/ascend.md), [compatibility](docs/compatibility.md),
-[extraction provenance](docs/migration.md), and [verification](docs/verification.md).
+The package itself is Python-only. NPU execution also requires CANN and the
+compiler toolchain for the selected backend. See the
+[compatibility guide](docs/compatibility.md) for compiler revisions and
+dependencies, and the [Ascend guide](docs/ascend.md) for backend options.
 
 ## Functional examples
 
@@ -67,13 +63,11 @@ python examples/ascend/test_torch_compile_rmsnorm.py
 python examples/ascend/test_torch_compile_rmsnorm.py --device npu:1 --dtype float32
 ```
 
-The examples use strict compilation with fusion disabled. Each dtype checks
-three different inputs against Torch and verifies that later calls preserve
-previous outputs. A complete hardware run reports **11 passed**, covering 33
-requests. Missing Ascend compiler support or NPU hardware produces explicit
-skips; skips do not establish successful device execution. Selecting `float32`
-skips the GEMM example because that schedule supports fp16/bf16 inputs.
-The examples run separately from the default `tests/` collection.
+The examples use strict compilation with fusion disabled. For each supported
+dtype, they compare three inputs against Torch and check that later calls
+preserve earlier outputs. Pytest skips cases when the required Ascend compiler,
+NPU or dtype is unavailable. Run the examples separately from the default
+`tests/` collection.
 
 ## Development and verification
 
@@ -85,15 +79,9 @@ python -m ruff check src tests examples scripts
 python -m pip wheel . --no-deps --no-build-isolation
 ```
 
-Unit tests inject CPU kernels while retaining the real FX/Relax frontend and
-graph executor. Source-only tests require an Ascend-enabled TileLang build.
-Runtime tests additionally require an NPU; PTO cases have the `pto` marker.
-Run optional PTO tests with `python -m pytest tests/ascend -q -m pto` against a
-separately validated PTO environment. The original compiler baseline has PTO
-compilation failures; the fixes and their tested compiler revision are recorded
-in [verification](docs/verification.md#pto-compiler-fixes-2026-11-14).
-Runtime, non-default-stream and fresh-process cache checks must pass on actual
-hardware before publishing a hardware compatibility claim.
+Unit tests can inject CPU kernels while exercising the FX/Relax frontend and
+graph executor. Source generation requires an Ascend-enabled TileLang build.
+Device execution, stream handling and PTO disk-cache restoration require an NPU.
 
 Run the complete AscendC hardware acceptance workflow with defaults:
 
@@ -101,23 +89,15 @@ Run the complete AscendC hardware acceptance workflow with defaults:
 python scripts/verify_npu.py
 ```
 
-This selects the first idle, healthy NPU inside the visible allocation and
-creates a unique result directory beside the checkout under
-`torch-tilelang-artifacts/`. It runs the regression suite, functional examples,
-a 30-minute soak and three-process performance measurements. Override the
-device or output with `--physical-device` or `--output`. Add `--include-pto`
-for an independent PTO workflow, including its own 30-minute soak and six
-performance processes. Run just that complete workflow with:
+The driver selects an idle, healthy NPU in the visible allocation and writes
+results outside the checkout. Run the PTO workflow separately with
 
 ```bash
 python scripts/verify_npu.py --stage pto
 ```
 
-Use `--stage pto-soak` or `--stage pto-benchmarks` for partial reruns. Results
-separate correctness, long-soak acceptance and timing availability; noisy timing
-does not establish a speedup. See
-[verification](docs/verification.md) for stage selection, recorded NPU results
-and the remaining compatibility/performance blockers.
+The [verification guide](docs/verification.md) explains stage selection, soak
+acceptance criteria and how to interpret benchmark comparisons.
 
 ## Scope
 
@@ -135,5 +115,6 @@ selection using real correctness and timing evidence.
 ## Origin and license
 
 Extracted from [tile-ai/tilelang PR #3892](https://github.com/tile-ai/tilelang/pull/3892)
-at `7eb3edc8ba7b183c63681aa149a2e7512057d5ec`. Original Tile-AI license text
-is preserved in [LICENSE](LICENSE).
+at `7eb3edc8ba7b183c63681aa149a2e7512057d5ec`. The
+[migration notes](docs/migration.md) map the original files to this package.
+Original Tile-AI license text is preserved in [LICENSE](LICENSE).
