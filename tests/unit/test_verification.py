@@ -146,6 +146,8 @@ def test_no_arguments_runs_complete_default_workflow(tmp_path, monkeypatch):
         "environment", "ascendc", "examples", "soak", "elementwise-0", "elementwise-1", "elementwise-2",
         "gemm_epilogue-0", "gemm_epilogue-1", "gemm_epilogue-2",
     ]
+    examples = phases[2][1]
+    assert "examples/ascend" in examples and examples[examples.index("-m", 2) + 1] == "not pto"
     soak = phases[3][1]
     assert float(soak[soak.index("--seconds") + 1]) == 1800
     assert int(soak[soak.index("--min-calls") + 1]) == 10000
@@ -180,6 +182,8 @@ def test_complete_pto_workflow_uses_pto_for_soak_and_six_benchmarks(driver):
     names = [name for name, _, _ in calls]
     assert code == 0
     assert names[:4] == ["pto-codegen", "pto-runtime", "pto-cache", "pto-soak"]
+    runtime = calls[1][1]
+    assert "examples/ascend" in runtime and runtime[runtime.index("-m", 2) + 1] == "pto and ascend"
     assert names[4:] == [f"pto-{work}-{i}" for work in ("elementwise", "gemm_epilogue") for i in range(3)]
     assert report["backends"]["pto"]["scope"] == "full"
     assert "ascendc" not in report["backends"]

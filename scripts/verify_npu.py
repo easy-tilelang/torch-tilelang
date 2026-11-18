@@ -417,7 +417,7 @@ def main():
         if selected("regression"):
             ascendc.append(pytest(directory, "ascendc", ["tests"], "-m", "not pto"))
         if selected("examples"):
-            ascendc.append(pytest(directory, "examples", ["examples/ascend"], "--device", "npu:0", "--seed", "0"))
+            ascendc.append(pytest(directory, "examples", ["examples/ascend"], "-m", "not pto", "--device", "npu:0", "--seed", "0"))
         if selected("soak"):
             ascendc.append(run_soak(directory, "soak", python, args))
         if selected("benchmarks"):
@@ -447,7 +447,7 @@ def main():
 
         if full:
             stage("pto-codegen", lambda: pytest(directory, "pto-codegen", ["tests/ascend"], "-m", "pto and not ascend"))
-            stage("pto-runtime", lambda: pytest(directory, "pto-runtime", ["tests/ascend"], "-m", "pto and ascend",
+            stage("pto-runtime", lambda: pytest(directory, "pto-runtime", ["tests/ascend", "examples/ascend"], "-m", "pto and ascend",
                                                "--ignore=tests/ascend/test_pto_cache.py"))
             stage("pto-cache", lambda: pytest(directory, "pto-cache", ["tests/ascend/test_pto_cache.py"], "-m", "pto"))
         if full or args.stage == "pto-soak":

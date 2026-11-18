@@ -44,13 +44,15 @@ dependencies, and the [Ascend guide](docs/ascend.md) for backend options.
 
 ## Functional examples
 
-Run the [torch.compile example](examples/ascend/torch_compile.py) on an Ascend NPU.
+With pytest installed, run the [torch.compile example](examples/ascend/test_torch_compile.py)
+on an Ascend NPU. It checks the default target and an explicit PTO target.
 
 ```bash
-python examples/ascend/torch_compile.py
+python examples/ascend/test_torch_compile.py
+python examples/ascend/test_torch_compile.py -m pto
 ```
 
-With pytest installed, run the four functional tests through the same backend.
+Run all examples, or select the cases that do not require PTO with `-m "not pto"`.
 
 ```bash
 python -m pytest examples/ascend -q
@@ -78,7 +80,7 @@ python examples/ascend/test_torch_compile_rmsnorm.py --device npu:1 --dtype floa
 TILELANG_DEFAULT_TARGET=pto python examples/ascend/test_torch_compile_rmsnorm.py
 ```
 
-The four functional tests use strict compilation with fusion disabled. For each supported
+The four operator tests listed above use strict compilation with fusion disabled. For each supported
 dtype, they compare three inputs against Torch and check that later calls
 preserve earlier outputs. Pytest skips cases when the required Ascend compiler,
 NPU or dtype is unavailable. Run the examples separately from the default
