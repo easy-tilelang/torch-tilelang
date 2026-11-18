@@ -86,3 +86,11 @@ With this fixed compiler, the unified PTO source/runtime/cache gate and a
 subsequent timing batch was blocked by other device processes; end-to-end
 performance acceptance remains open. See the
 [unified PTO acceptance record](verification.md#unified-pto-acceptance-2026-11-16).
+
+CANN builds sharing the 9.3.0 version label are not interchangeable acceptance
+baselines. With the same Torch pair, build `V100R001C13B046` produced a pure
+Torch device-side `signbit` discrepancy; the `V100R001C13B023` control passed.
+Use the recorded build identifier and toolchain, not the version label alone.
+The [toolchain comparison](verification.md#card-5-recovery-and-toolchain-comparison-2026-11-18)
+includes the minimal probe and the completed B023 performance batch, whose
+timing remained inconclusive.

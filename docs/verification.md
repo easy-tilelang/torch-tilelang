@@ -386,6 +386,76 @@ The artifact directory is `pto-card4-20261116.JqGZNY`, outside the checkout.
 It retains the exact commands, environment and native-library fingerprints,
 raw JSON and logs for both processes, and all command-level device snapshots.
 
+## Card 5 recovery and toolchain comparison (2026-11-18)
+
+NPU management queries returned successfully on this attempt. Cards 4, 5 and
+6 initially reported OK health, zero compute utilization and no device
+processes. Card 5 was selected from the inherited allocation for the pending
+PTO performance stage; no device reset or management-service change was made.
+
+The inherited toolchain had changed from CANN `V100R001C13B023` / ptoas 0.69
+to `V100R001C13B046` / ptoas 0.72. Torch remained 2.12.0+cpu and torch_npu
+2.12.0.post2. The fixed TileLang source revision and loaded native-library
+hashes matched the earlier runs; the installed distribution's version label
+had changed, reinforcing the need to record actual sources and libraries.
+
+The first performance attempt failed the graph's signed-zero check before
+timing. A fresh, isolated cache reproduced the failure through the same
+acceptance entry point, so stale cache alone does not explain it. Direct
+graph outputs and reference snapshots matched when compared on the CPU, while
+device-side sign-bit comparisons disagreed. The following pure Torch probe,
+without importing TileLang, reproduced a discrepancy in the B046 environment:
+
+```python
+import torch
+import torch_npu
+
+x = torch.tensor([-0.0, 0.0, -1.0, 1.0], dtype=torch.float16)
+x = x.repeat(262144).reshape(1024, 1024).npu()
+expected = torch.signbit(x.cpu())
+for trial in range(3):
+    actual = torch.signbit(x).cpu()
+    print(trial, (actual != expected).sum().item())
+```
+
+All three B046 trials reported **370,779 mismatched bits out of 1,048,576**;
+all three trials under B023 reported **zero**. This isolates a problem with
+the current Torch/torch_npu/CANN combination independently of TileLang; it
+does not identify the faulty component within that combination. The graph's
+correctness checks were retained. The B046 validation failures cannot be used
+as accepted performance evidence.
+
+The six-process benchmark was then completed with B023 / ptoas 0.69 selected
+only in the child process environment, with a separate cache. Shared shell,
+installed packages and repository runtime/scheduling code were unchanged.
+All **six processes passed** numerical validation, actual PTO-adapter checks
+and before/after device-occupancy checks. Health snapshots remained OK with no
+reported error code. This partial rerun exited successfully and reported
+`execution_passed: true`; it did not rerun the earlier 30-minute soak.
+
+The table gives medians of process medians in microseconds. These are
+descriptive samples: both workloads' C device measurements and every wall
+measurement failed the unchanged 2% stability boundary.
+
+| Workload | A device | B device | C device | Torch device | C wall | Torch wall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Elementwise fp16 | 54.792 | 61.038 | 33.578 | 14.656 | 56.485 | 38.949 |
+| GEMM epilogue bf16 | 9.127 | 9.584 | 4.942 | 8.053 | 39.600 | 23.305 |
+
+Every B/C and C/Torch comparison in this batch remains null, and
+`timing_comparisons` is `inconclusive`. No new device or end-to-end speedup
+claim is accepted. The earlier 1.662x GEMM device result remains a historical
+result from its own validated batch. The sampling blockage is resolved;
+toolchain compatibility and timing stability remain separate open items.
+
+Artifacts outside the checkout are retained in:
+
+- `pto-card5-20261118.IfhnFk`: inherited-toolchain failure, pure Torch and
+  graph-validation probes, and old/new toolchain comparison logs;
+- `pto-card5-fresh-20261118.EnOxGd`: same-entry-point failure with a fresh cache;
+- `pto-card5-b023-20261118.mMumHL`: complete six-process results, environment
+  and native-library fingerprints, occupancy snapshots and timing summaries.
+
 ## Reproducing hardware acceptance
 
 No arguments are required:
