@@ -99,7 +99,6 @@ class TorchGraphRunner:
         self.output_reductions = output_reduction_flags(mod)
         compiler = kernel_compiler or _compile_kernel
         pending_kernels = {}
-        sequences = []
 
         def check(expr):
             if isinstance(expr, relax.Call):
@@ -131,7 +130,6 @@ class TorchGraphRunner:
             elif isinstance(expr, relax.ShapeExpr):
                 _shape(expr)
             elif isinstance(expr, relax.SeqExpr):
-                sequences.append(expr)
                 for block in expr.blocks:
                     for binding in block.bindings:
                         if not isinstance(binding, relax.VarBinding):
@@ -152,20 +150,81 @@ class TorchGraphRunner:
                 self.backend_context = actual_context
                 self.target_backend, self.execution_backend = actual_pair
             self.kernels[name] = kernel
-        self._use_counts = {}
-        self._binding_dependencies = {}
-        self._return_dependencies = {}
-        for sequence in sequences:
-            for block in sequence.blocks:
-                for binding in block.bindings:
-                    dependencies = tuple(relax.analysis.free_vars(binding.value))
-                    self._binding_dependencies[binding.var] = dependencies
-                    for var in dependencies:
-                        self._use_counts[var] = self._use_counts.get(var, 0) + 1
-            dependencies = tuple(relax.analysis.free_vars(sequence.body))
-            self._return_dependencies[sequence] = dependencies
-            for var in dependencies:
-                self._use_counts[var] = self._use_counts.get(var, 0) + 1
+        self._build_execution_plan()
+
+    def _build_execution_plan(self):
+        """Resolve IR once into Python operations and integer value slots."""
+        variables = {param: index for index, param in enumerate(self.main.params)}
+        constants = {}
+        steps = []
+
+        def emit(reads, execute):
+            destination = len(self.input_specs) + len(steps)
+            steps.append((destination, reads, execute))
+            return destination
+
+        def compile_expr(expr):
+            if isinstance(expr, relax.Var):
+                return variables[expr]
+            if isinstance(expr, relax.Constant):
+                if expr not in constants:
+                    source = self.constants[expr]
+
+                    def load(values, device):
+                        return source.to(device=device)
+
+                    constants[expr] = emit((), load)
+                return constants[expr]
+            if isinstance(expr, relax.Tuple):
+                fields = tuple(compile_expr(field) for field in expr.fields)
+
+                def pack(values, device):
+                    return tuple(values[index] for index in fields)
+
+                return emit(fields, pack)
+            if isinstance(expr, relax.TupleGetItem):
+                source = compile_expr(expr.tuple_value)
+                index = int(expr.index)
+
+                def getitem(values, device):
+                    return values[source][index]
+
+                return emit((source,), getitem)
+            if isinstance(expr, relax.Call):
+                inputs = tuple(compile_expr(field) for field in expr.args[1].fields)
+                kernel = self.kernels[expr.args[0].name_hint]
+                specs = self.output_specs[expr]
+                returns_tuple = isinstance(expr.struct_info, relax.TupleStructInfo)
+
+                def launch(values, device):
+                    outputs = tuple(torch.empty(spec.shape, dtype=spec.dtype, device=device) for spec in specs)
+                    kernel(*(values[index] for index in inputs), *outputs)
+                    return outputs if returns_tuple else outputs[0]
+
+                return emit(inputs, launch)
+            if isinstance(expr, relax.SeqExpr):
+                for block in expr.blocks:
+                    for binding in block.bindings:
+                        variables[binding.var] = compile_expr(binding.value)
+                return compile_expr(expr.body)
+            raise UnsupportedGraphError(f"Unsupported graph expression {type(expr).__name__}")
+
+        self._result_slot = compile_expr(self.main.body)
+        # Aliases share slots. A value survives through its final instruction
+        # consumer, including tuple packing/projection and the graph return.
+        last_use = {}
+        for index, (destination, reads, _) in enumerate(steps):
+            last_use[destination] = index
+            for slot in reads:
+                last_use[slot] = index
+        last_use[self._result_slot] = len(steps)
+        releases = [[] for _ in steps]
+        for slot, index in last_use.items():
+            if index < len(steps):
+                releases[index].append(slot)
+        self._execution_plan = tuple((destination, execute, tuple(releases[index]))
+                                     for index, (destination, _, execute) in enumerate(steps))
+        self._num_slots = len(self.input_specs) + len(steps)
 
     def __call__(self, *args):
         if len(args) != len(self.input_specs):
@@ -186,43 +245,7 @@ class TorchGraphRunner:
                 or (value.requires_grad and torch.is_grad_enabled())
             ):
                 raise ValueError("Graph input does not match its compiled shape, dtype, device, or layout")
-        env = dict(zip(self.main.params, args))
-        constants = {}
-        remaining_uses = dict(self._use_counts)
-
-        def release(dependencies):
-            for var in dependencies:
-                remaining_uses[var] -= 1
-                if remaining_uses[var] == 0:
-                    env.pop(var, None)
-
-        def evaluate(expr):
-            if isinstance(expr, relax.Var):
-                return env[expr]
-            if isinstance(expr, relax.Constant):
-                if expr not in constants:
-                    constants[expr] = self.constants[expr].to(device=device)
-                return constants[expr]
-            if isinstance(expr, relax.Tuple):
-                return tuple(evaluate(field) for field in expr.fields)
-            if isinstance(expr, relax.TupleGetItem):
-                return evaluate(expr.tuple_value)[expr.index]
-            if isinstance(expr, relax.Call):
-                inputs = evaluate(expr.args[1])
-                outputs = tuple(torch.empty(spec.shape, dtype=spec.dtype, device=device) for spec in self.output_specs[expr])
-                self.kernels[expr.args[0].name_hint](*inputs, *outputs)
-                return outputs if isinstance(expr.struct_info, relax.TupleStructInfo) else outputs[0]
-            if isinstance(expr, relax.SeqExpr):
-                for block in expr.blocks:
-                    for binding in block.bindings:
-                        env[binding.var] = evaluate(binding.value)
-                        release(self._binding_dependencies[binding.var])
-                        if not remaining_uses.get(binding.var, 0):
-                            env.pop(binding.var, None)
-                result = evaluate(expr.body)
-                release(self._return_dependencies[expr])
-                return result
-            raise UnsupportedGraphError(f"Unsupported graph expression {type(expr).__name__}")
+        values = list(args) + [None] * (self._num_slots - len(args))
 
         # The existing kernel adapter supplies Torch's current NPU stream to
         # TVM-FFI. Keep raw Torch tensors at this boundary instead of wrapping
@@ -238,7 +261,11 @@ class TorchGraphRunner:
                     # Producer/consumer stream ordering still follows Torch's
                     # usual explicit wait_stream/event protocol.
                     value.record_stream(stream)
-            return evaluate(self.main.body)
+            for destination, execute, releases in self._execution_plan:
+                values[destination] = execute(values, device)
+                for slot in releases:
+                    values[slot] = None
+            return values[self._result_slot]
 
 
 def build_runner(

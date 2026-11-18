@@ -226,6 +226,16 @@ adapter, configuration, and raw samples. Sources use `.asc` for AscendC and
 `.ptodsl.py` for PTO, based on the actual selected backend. Successful fusion relative
 to independent TileLang kernels does not imply it outperforms Torch NPU eager.
 
+The Torch graph runner prepares a static execution plan when it is built.
+Requests execute prebound kernel calls through integer value slots, without
+traversing Relax IR or looking up IR symbols on the execution path. Input
+validation, Torch-owned output allocations and current-stream handling remain
+part of every request. Slots are local to each call; intermediate references
+are released after their last consumer, while returned tensors and input aliases
+keep their usual ownership. Constants are transferred at most once within each
+request, and output buffers are not pooled across requests. Graph and kernel
+metadata remain available for inspection.
+
 Full Relax VM execution would require a separate Ascend runtime project:
 device allocation/free, copies, device and stream context, asynchronous storage
 reuse, and DLPack output ownership. Torch-managed graph execution does not

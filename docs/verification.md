@@ -456,6 +456,80 @@ Artifacts outside the checkout are retained in:
 - `pto-card5-b023-20261118.mMumHL`: complete six-process results, environment
   and native-library fingerprints, occupancy snapshots and timing summaries.
 
+## Static execution plan (2026-11-18)
+
+The graph runner now prepares Python operations, integer value slots and
+last-consumer release positions during construction. Request execution no
+longer traverses Relax IR, reads TVM containers or resolves IR symbols. The
+graph/kernel inspection metadata, input validation, fresh Torch-owned outputs,
+per-request constant transfers, input aliases and stream handling are retained.
+Slot storage belongs to each invocation, including overlapping invocations.
+The public configuration and kernel ABI are unchanged.
+
+The before revision is `8778569`; its source is preserved in a detached
+worktree. Both versions use the fixed TileLang revision `de9c5126` and B023 /
+ptoas 0.69 selected in child processes with a separate cache. The shared CANN
+environment and installed packages were not changed. Each experiment logs the
+imported package path and runtime source SHA-256 to distinguish the two versions.
+
+The final full regression passed **444 tests, with 1 optional profiler-interface
+skip**. Runtime tests cover execution without access to graph metadata, unused
+outputs and last-consumer release, repeated inputs, multi-output projection,
+nested output aliases, constant transfers and overlapping request slot storage.
+The runtime subset passed all **88 tests**. Ruff and `git diff --check` passed.
+
+A small CPU experiment used injected arithmetic kernels for the same three-op
+graph, seven rounds of 5000 requests, and a separate 2000-request cProfile run:
+
+| Measurement | Before | Static plan |
+| --- | ---: | ---: |
+| Median request time, CPU microseconds | 46.662 | 19.477 |
+| Profiled function calls, 2000 requests | 708001 | 144001 |
+
+These are host-side diagnostic samples, not NPU latency or an accepted
+end-to-end speedup. The new profile contains no execution-time Relax container
+accesses or recursive IR evaluator calls. The before/after profile logs retain
+all seven time samples and the function-call breakdown.
+
+Both backend smoke runs passed on real hardware. PTO then passed its full
+**1800.20-second soak with 2,203,135 measured calls**. The first AscendC soak
+stopped updating after **1482.08 seconds and 1,915,243 calls** while its card
+reported sustained 100% utilization and another process was present. Only this
+task's waiting process group was terminated. That interrupted run remains
+explicitly failed/incomplete and is not counted as a 30-minute pass.
+
+AscendC was rerun on the freed card and passed **1800.23 measured seconds and
+2,374,900 calls**. Both completed soaks cover all 11 model/dtype cases with
+strict compilation and fusion disabled. Every partition resolved to the
+requested backend and reported zero fallbacks. Each completed soak has **61
+memory samples**, all at **104,960 allocated bytes** and **41,943,040 reserved
+bytes**. Numerical results, old-output lifetime and explicit stream dependencies
+were checked on every measured call.
+
+After both soaks completed, the paired performance workflow was started on the
+freed card. It was configured to alternate before/after versions for three
+processes per workload/version, five rounds per process, across both backends
+(24 processes total), with the existing 2% timing boundary and occupancy checks.
+During environment preflight, `npu-smi` entered uninterruptible driver
+communication wait (`devdrv_sync_non_trans_msg_se`). Other management queries
+also became blocked. **No timing process was launched**. Only this task's
+waiting workflow was cancelled; no device reset or other-task termination was
+performed.
+
+There are therefore no accepted NPU before/after latency numbers for this
+change. The lower CPU diagnostic time is not substituted for device or graph
+wall-time evidence. The paired workflow can be rerun after device management
+queries recover and a card can be confirmed available.
+
+Artifacts are retained outside the checkout in `static-plan.xkPKtJ`: the
+baseline worktree, runtime before/after source snapshots, final regression XML,
+CPU profile logs, both completed soak reports, the interrupted AscendC run and
+its interruption record, and `paired-bench/blocked.json`. The local `run.py`
+selects B023 and the requested checkout only in child processes;
+`paired_bench.py` records imported source paths and retains every command and
+sample from a completed rerun. The saved runtime snapshot matches the tested
+implementation's SHA-256.
+
 ## Reproducing hardware acceptance
 
 No arguments are required:

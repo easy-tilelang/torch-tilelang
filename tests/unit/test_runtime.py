@@ -744,3 +744,136 @@ def test_effects_gate_rejects_unknown_methods_randomness_and_overridden_modules(
     x = graph.placeholder("x")
     graph.output(graph.call_module("activation", (x,)))
     assert _has_unsafe_effects(torch.fx.GraphModule({"activation": DifferentReLU()}, graph))
+
+
+def test_execution_does_not_read_graph_metadata_after_construction():
+    gm = torch.fx.symbolic_trace(lambda x, y: (torch.relu(x + y), (x * y, x)))
+    x, y = torch.randn(2, 4), torch.randn(2, 4)
+    runner = build_runner(fx_to_relax(gm, (x, y)), kernel_compiler=_cpu_kernel_compiler)
+
+    class UnavailableIR:
+        def __getattr__(self, name):
+            raise AssertionError(f"Execution attempted to read IR attribute {name}")
+
+    runner.main = runner.mod = UnavailableIR()
+    for value in (x, x + 2):
+        actual = runner(value, y)
+        torch.testing.assert_close(actual, gm(value, y))
+        assert actual[1][1] is value
+
+
+def test_unused_call_output_is_released_and_duplicate_inputs_keep_identity():
+    x = torch.randn(2, 4)
+    original = fx_to_relax(torch.fx.symbolic_trace(lambda a, b: a + b), (x, x))
+    add = next(func for func in original.functions.values() if isinstance(func, tirx.PrimFunc))
+    builder = relax.BlockBuilder()
+    gv = builder.add_func(add, "add")
+    info = relax.TensorStructInfo((2, 4), "float32")
+    a, b = relax.Var("a", info), relax.Var("b", info)
+    with builder.function("main", [a, b]):
+        builder.emit(relax.call_tir(gv, (a, b), out_sinfo=info))
+        result = builder.emit(relax.call_tir(gv, (a, a), out_sinfo=info))
+        builder.emit_func_output(result)
+    refs = []
+
+    def compile_kernel(func, config):
+        kernel = _cpu_kernel_compiler(func, config)
+
+        def run(*args):
+            if refs:
+                assert refs[0]() is None
+                assert args[0] is args[1]
+            refs.append(weakref.ref(args[-1]))
+            kernel(*args)
+        return run
+
+    runner = build_runner(builder.get(), kernel_compiler=compile_kernel)
+    actual = runner(x, x + 1)
+    torch.testing.assert_close(actual, x + x)
+    assert len(refs) == 2
+
+
+def test_multi_output_kernel_projection_and_nested_aliases():
+    buffers = [tirx.decl_buffer((2, 4), "float32", name=name) for name in ("input", "first", "second")]
+    pair = tirx.PrimFunc([b.data for b in buffers], tirx.Evaluate(0), buffer_map={b.data: b for b in buffers})
+    builder = relax.BlockBuilder()
+    gv = builder.add_func(pair.with_attr("global_symbol", "pair"), "pair")
+    info = relax.TensorStructInfo((2, 4), "float32")
+    xvar = relax.Var("x", info)
+    with builder.function("main", [xvar]):
+        pair_value = builder.emit(relax.call_tir(gv, (xvar,), out_sinfo=[info, info]))
+        first = builder.emit(relax.TupleGetItem(pair_value, 0))
+        second = builder.emit(relax.TupleGetItem(pair_value, 1))
+        builder.emit_func_output(relax.Tuple([first, relax.Tuple([second, xvar, first])]))
+
+    def compile_pair(func, config):
+        def run(x, a, b):
+            a.copy_(x + 1)
+            b.copy_(x * 2)
+        return run
+
+    x = torch.randn(2, 4)
+    runner = build_runner(builder.get(), kernel_compiler=compile_pair)
+    first = runner(x)
+    second = runner(x + 3)
+    torch.testing.assert_close(first, (x + 1, (x * 2, x, x + 1)))
+    torch.testing.assert_close(second, (x + 4, ((x + 3) * 2, x + 3, x + 4)))
+    assert first[0] is first[1][2] and first[1][1] is x
+    assert first[0].data_ptr() != second[0].data_ptr()
+    assert first[1][0].data_ptr() != second[1][0].data_ptr()
+
+
+def test_repeated_constant_is_loaded_once_per_request(monkeypatch):
+    import numpy as np
+
+    info = relax.TensorStructInfo((2, 4), "float32")
+    xvar = relax.Var("x", info)
+    constant = relax.const(np.arange(8, dtype="float32").reshape(2, 4))
+    builder = relax.BlockBuilder()
+    with builder.function("main", [xvar]):
+        builder.emit_func_output(relax.Tuple([constant, relax.Tuple([constant, xvar])]))
+    copies = []
+    source = torch.arange(8, dtype=torch.float32).reshape(2, 4)
+
+    class ConstantTransfer:
+        def to(self, *, device):
+            copies.append(device)
+            return source.to(device=device)
+
+    # Count logical constant transfers, not Torch's internal redispatch of
+    # Tensor.to under the device context.
+    monkeypatch.setattr(torch, "from_dlpack", lambda value: ConstantTransfer())
+    runner = build_runner(builder.get(), kernel_compiler=lambda *args: pytest.fail("No kernel expected"))
+    x = torch.randn(2, 4)
+    for _ in range(2):
+        before = len(copies)
+        actual = runner(x)
+        assert len(copies) == before + 1
+        torch.testing.assert_close(actual[0], source)
+        assert actual[0] is actual[1][0] and actual[1][1] is x
+
+
+def test_overlapping_requests_have_independent_execution_slots():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier = Barrier(2)
+
+    def compile_kernel(func, config):
+        kernel = _cpu_kernel_compiler(func, config)
+        name = str(func.attrs["global_symbol"])
+
+        def run(*args):
+            if name.startswith("add"):
+                barrier.wait(timeout=10)
+            kernel(*args)
+        return run
+
+    model = torch.fx.symbolic_trace(lambda x, y: torch.relu(x + y) * y)
+    x, y = torch.randn(2, 4), torch.randn(2, 4)
+    runner = build_runner(fx_to_relax(model, (x, y)), kernel_compiler=compile_kernel)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(runner, x, y)
+        second = pool.submit(runner, x + 3, y + 1)
+        torch.testing.assert_close(first.result(), model(x, y))
+        torch.testing.assert_close(second.result(), model(x + 3, y + 1))
