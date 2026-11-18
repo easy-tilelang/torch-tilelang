@@ -64,6 +64,8 @@ separate check: emitted PTODSL does not prove successful assembly, binary
 compilation, numerical execution, or performance.
 
 ## Execution and fallback
+For a source-level walkthrough of graph compilation and execution, see
+[Ascend 后端的编译与执行流程](ascend-backend.zh.md).
 
 The frontend partitions supported pure operators and converts each partition
 to Relax `call_tir` functions. Compilation occurs on its first invocation with
