@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import operator
 import weakref
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -239,6 +240,32 @@ def test_graph_runner_counts_calls_and_rejects_shape_mismatch():
     assert len(runner.kernels) <= runner.kernel_count
     with pytest.raises(ValueError, match="compiled shape"):
         runner(torch.randn(3, 4), torch.randn(3, 4))
+
+
+def test_only_native_runner_requires_npu_inputs(monkeypatch):
+    runtime = importlib.import_module("torch_tilelang.runtime")
+    context = SimpleNamespace(
+        target="ascend", module=SimpleNamespace(name="ascend"), execution_backend=SimpleNamespace(name="tvm_ffi")
+    )
+    monkeypatch.setattr(runtime, "_resolve_graph_context", lambda config: context)
+
+    def compile_kernel(func, config):
+        kernel = _cpu_kernel_compiler(func, config)
+        kernel.backend_context = context
+        return kernel
+
+    def fail_if_launched(*args):
+        pytest.fail("Native kernel received CPU tensors")
+
+    monkeypatch.setattr(runtime, "_compile_kernel", lambda func, config: fail_if_launched)
+    gm = torch.fx.symbolic_trace(lambda x, y: x + y)
+    x, y = torch.randn(2, 4), torch.randn(2, 4)
+    mod = fx_to_relax(gm, (x, y))
+    native = build_runner(mod)
+    with pytest.raises(UnsupportedGraphError, match="requires NPU tensors"):
+        native(x, y)
+    injected = build_runner(mod, kernel_compiler=compile_kernel)
+    torch.testing.assert_close(injected(x, y), x + y)
 
 
 def test_graph_runner_rejects_non_tensor_return_before_compilation():
@@ -877,3 +904,58 @@ def test_overlapping_requests_have_independent_execution_slots():
         second = pool.submit(runner, x + 3, y + 1)
         torch.testing.assert_close(first.result(), model(x, y))
         torch.testing.assert_close(second.result(), model(x + 3, y + 1))
+
+
+def test_failed_signature_preserves_cached_runner_report(monkeypatch):
+    from unittest.mock import Mock
+
+    compiler = Mock(wraps=_cpu_kernel_compiler)
+    backend = _cpu_backend(monkeypatch, config=GraphConfig(strict=True), compiler=compiler)
+    model = torch.fx.symbolic_trace(lambda x: x + 1)
+    x = torch.randn(4)
+    run = backend(model, (x,))
+    torch.testing.assert_close(run(x), model(x))
+    status, = run.graph_report.partitions
+    with pytest.raises(UnsupportedGraphError, match="float16, bfloat16, and float32"):
+        run(x.double())
+
+    assert status.compiled and status.kernel_count == 1
+    assert status.compiled_calls == 1 and status.fallback_calls == 0
+    torch.testing.assert_close(run(x), model(x))
+    assert status.compiled_calls == 2 and status.fallback_calls == 0
+    compiler.assert_called_once()
+
+
+def test_overlapping_signatures_count_the_selected_runners(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from torch_tilelang.backend import PartitionReport, _CompiledPartition
+
+    _cpu_backend(monkeypatch)
+    model = torch.fx.symbolic_trace(lambda x: x + 1)
+    status = PartitionReport("add")
+    partition = _CompiledPartition(model, GraphConfig(), status)
+    compile_lock = partition._compile_lock
+    first_unlocked, resume = Event(), Event()
+
+    class PauseAfterFirstUnlock:
+        def __enter__(self):
+            compile_lock.acquire()
+
+        def __exit__(self, *exc):
+            compile_lock.release()
+            if not first_unlocked.is_set():
+                first_unlocked.set()
+                assert resume.wait(timeout=10)
+
+    partition._compile_lock = PauseAfterFirstUnlock()
+    x = torch.randn(4)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        compiled = pool.submit(partition, x)
+        try:
+            assert first_unlocked.wait(timeout=10)
+            torch.testing.assert_close(partition(x.double()), model(x.double()))
+        finally:
+            resume.set()
+        torch.testing.assert_close(compiled.result(), model(x))
+    assert status.compiled_calls == 1 and status.fallback_calls == 1

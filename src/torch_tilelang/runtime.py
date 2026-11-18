@@ -72,7 +72,8 @@ class TorchGraphRunner:
         # An injected compiler also supports pure CPU executor tests on builds
         # without Ascend. Native compilation always resolves and validates the
         # existing target/execution pair before dispatching any kernel.
-        self.backend_context = _resolve_graph_context(config) if kernel_compiler is None else None
+        self._requires_npu = kernel_compiler is None
+        self.backend_context = _resolve_graph_context(config) if self._requires_npu else None
         self.config = _resolved_config(config, self.backend_context) if self.backend_context is not None else config
         self.target_backend = self.backend_context.module.name if self.backend_context is not None else None
         self.execution_backend = self.backend_context.execution_backend.name if self.backend_context is not None else None
@@ -97,7 +98,7 @@ class TorchGraphRunner:
         self.has_reduction = has_reduction(mod)
         self.kernel_count = kernel_count(mod)
         self.output_reductions = output_reduction_flags(mod)
-        compiler = kernel_compiler or _compile_kernel
+        compiler = _compile_kernel if kernel_compiler is None else kernel_compiler
         pending_kernels = {}
 
         def check(expr):
@@ -234,6 +235,8 @@ class TorchGraphRunner:
         if not isinstance(args[0], torch.Tensor):
             raise ValueError("Graph inputs must be tensors")
         device = args[0].device
+        if self._requires_npu and device.type != "npu":
+            raise UnsupportedGraphError("Native Ascend graph execution requires NPU tensors")
         for value, spec in zip(args, self.input_specs):
             if (
                 not isinstance(value, torch.Tensor)

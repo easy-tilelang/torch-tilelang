@@ -222,10 +222,6 @@ class _CompiledPartition(torch.nn.Module):
         self._compile_lock = threading.Lock()
 
     def _prepare(self, args):
-        self.report.compiled = False
-        self.report.kernel_count = 0
-        self.report.fallback_reason = None
-        self.report.fusion_decision = None
         try:
             validate_inputs(args)
             mod = fx_to_relax(self.original, args)
@@ -235,9 +231,8 @@ class _CompiledPartition(torch.nn.Module):
             # including validation/profiling below, is outside this catch.
             if self.config.strict:
                 raise
-            self.report.fallback_reason = f"{type(error).__name__}: {error}"
             logger.debug("Ascend partition %s uses Torch: %s", self.report.name, error, exc_info=True)
-            return self.original.forward
+            return self.original.forward, f"{type(error).__name__}: {error}"
 
         from .fusion import GraphValidationError, validate_runner
 
@@ -246,8 +241,7 @@ class _CompiledPartition(torch.nn.Module):
         except GraphValidationError as error:
             if self.config.strict:
                 raise
-            self.report.fallback_reason = str(error)
-            return self.original.forward
+            return self.original.forward, str(error)
         selected = baseline
         if self.config.fusion == "profile":
             from .fusion import FusionDecision, SelectedRunner, make_fusion_candidate, select_fusion
@@ -262,26 +256,27 @@ class _CompiledPartition(torch.nn.Module):
                 # Device execution errors deliberately propagate from the
                 # selector. A numerical candidate rejection returns baseline.
                 selected = select_fusion(baseline, candidate, args, self.config, reference=self.original)
-        self.report.kernel_count = selected.kernel_count
-        self.report.compiled = self.report.kernel_count > 0
-        self.report.fusion_decision = getattr(selected, "fusion_decision", None)
-        self.report.target_backend = getattr(selected, "target_backend", None) or self.report.target_backend
-        self.report.execution_backend = getattr(selected, "execution_backend", None) or self.report.execution_backend
-        return selected
+        return selected, None
 
     def forward(self, *args):
         signature = _signature(args)
         with self._compile_lock:
             if signature != self._signature:
-                runner = self._prepare(args)
+                runner, fallback_reason = self._prepare(args)
+                self.report.kernel_count = getattr(runner, "kernel_count", 0)
+                self.report.compiled = self.report.kernel_count > 0
+                self.report.fallback_reason = fallback_reason
+                self.report.fusion_decision = getattr(runner, "fusion_decision", None)
+                self.report.target_backend = getattr(runner, "target_backend", None) or self.report.target_backend
+                self.report.execution_backend = getattr(runner, "execution_backend", None) or self.report.execution_backend
                 self._runner = runner
                 self._signature = signature
             else:
                 runner = self._runner
-        if self.report.compiled:
-            self.report.compiled_calls += 1
-        else:
-            self.report.fallback_calls += 1
+            if self.report.compiled:
+                self.report.compiled_calls += 1
+            else:
+                self.report.fallback_calls += 1
         return runner(*args)
 
 
