@@ -21,7 +21,7 @@ at `7eb3edc8ba7b183c63681aa149a2e7512057d5ec`.
 | `testing/ascend/graph/test_graph_operators.py` | `tests/ascend/test_operators.py` |
 | `testing/ascend/graph/test_graph_schedule.py` | `tests/ascend/test_schedule.py` |
 | `testing/ascend/graph/test_graph_pto_cache.py` | `tests/ascend/test_pto_cache.py` |
-| `examples/ascend/graph/torch_compile.py` | `examples/ascend/torch_compile.py` |
+| `examples/ascend/graph/torch_compile.py` | `scripts/benchmark_graph.py` |
 | `docs/developer_guide/ascend_graph_compile.md` | `docs/ascend.md` |
 | `LICENSE` | `LICENSE` |
 

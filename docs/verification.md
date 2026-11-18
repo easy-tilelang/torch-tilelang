@@ -67,7 +67,7 @@ reflects AscendC. Use `--stage pto` when PTO must determine the exit code.
   unavailable. `baseline_over_fused` compares the two candidate-tile variants.
   `fused_over_torch_latency` compares the fused variant to eager Torch, with
   values below one favoring the fused variant. For GEMM the former includes
-  both fusion and epilogue scheduling. [Benchmark variants](../examples/ascend/torch_compile.py)
+  both fusion and epilogue scheduling. [Benchmark variants](../scripts/benchmark_graph.py)
 
 Use the generated environment metadata and raw samples when publishing a
 compatibility finding or performance comparison in an issue, PR or release note.

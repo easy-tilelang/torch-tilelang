@@ -343,7 +343,7 @@ def run_benchmarks(output, python, pto=False):
             stem = f"{workload}-{process}"
             path = output / f"{stem}.json"
             name = f"pto-{stem}" if pto else stem
-            record = run_command(output, name, [python, "examples/ascend/torch_compile.py", "--workload", workload,
+            record = run_command(output, name, [python, "scripts/benchmark_graph.py", "--workload", workload,
                                  "--dtype", dtype, *dimensions, "--device", "npu:0", "--seed", "0", *options,
                                  "--bench", "--repeats", "5", "--output", str(path)], device_snapshots=True,
                                  validator=lambda path=path: validate_benchmark(path, backend, execution))

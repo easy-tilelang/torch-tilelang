@@ -44,8 +44,13 @@ dependencies, and the [Ascend guide](docs/ascend.md) for backend options.
 
 ## Functional examples
 
-With pytest installed in the compatible environment, run all four standalone
-examples through the installed `tilelang` backend:
+Run the [torch.compile example](examples/ascend/torch_compile.py) on an Ascend NPU.
+
+```bash
+python examples/ascend/torch_compile.py
+```
+
+With pytest installed, run the four functional tests through the same backend.
 
 ```bash
 python -m pytest examples/ascend -q
@@ -65,7 +70,7 @@ supported dtypes per example, and `--seed` to `0`. Override them as needed:
 python -m pytest examples/ascend -q --device npu:1 --dtype bfloat16 --seed 0
 ```
 
-Each script can also run directly with the same optional arguments:
+Each functional test script also accepts these options when run directly.
 
 ```bash
 python examples/ascend/test_torch_compile_rmsnorm.py
@@ -73,7 +78,7 @@ python examples/ascend/test_torch_compile_rmsnorm.py --device npu:1 --dtype floa
 TILELANG_DEFAULT_TARGET=pto python examples/ascend/test_torch_compile_rmsnorm.py
 ```
 
-The examples use strict compilation with fusion disabled. For each supported
+The four functional tests use strict compilation with fusion disabled. For each supported
 dtype, they compare three inputs against Torch and check that later calls
 preserve earlier outputs. Pytest skips cases when the required Ascend compiler,
 NPU or dtype is unavailable. Run the examples separately from the default

@@ -186,7 +186,7 @@ block/core mapping, and VF execution geometry in B and C. Equal configuration
 values do not prove those properties; inspect the scheduled TIR for every
 producer and consumer.
 
-In the example's elementwise workload, B and C use the same linear output tiles
+In the benchmark's elementwise workload, B and C use the same linear output tiles
 and ownership mapping, so B to C isolates fusion, including reduced launches.
 A to B measures the change in unfused scheduling from the requested tile size.
 
@@ -197,27 +197,27 @@ the Cube output's two-dimensional tile, normally 64 by 64, with smaller aligned
 tiles where required. Their effective epilogue regions and core mapping differ
 even when both runners use the same `GraphConfig`; the GEMM rule does not use
 the injective `tile_size` to choose its Cube tile. B to C therefore measures
-combined fusion and epilogue scheduling benefits. The example marks this
+combined fusion and epilogue scheduling benefits. The benchmark marks this
 comparison with `fusion_isolated=false`, reports
 `combined_epilogue_speedup_B_over_C`, and leaves `fusion_speedup_B_over_C` null.
 To isolate GEMM fusion, a further unfused baseline must retain GM handoffs while
 matching the fused candidate's effective epilogue tile and ownership mapping.
 
 Report device time separately from graph wall time and retain the raw samples,
-target, compiler version, tile configuration, and actual kernel call counts.
+target, tile configuration, and actual kernel call counts.
 Inspect generated TIR/source for the intermediate being eliminated. Additional
 memory tracing is needed to measure actual GM traffic, rather than estimating
 traffic from tensor sizes alone.
 
-The [graph example](../examples/ascend/torch_compile.py) runs a real
-Dynamo compilation, validates A/B/C, optionally records event and wall samples,
-and exports generated sources. For example:
+The graph benchmark runs Dynamo compilation and validates A/B/C. Use
+`--bench` to collect event and wall timings and `--source-dir` to export
+generated sources. [Benchmark script](../scripts/benchmark_graph.py)
 
 ```bash
-python examples/ascend/torch_compile.py --bench --output /tmp/graph.json
-python examples/ascend/torch_compile.py --workload gemm_epilogue \
+python scripts/benchmark_graph.py --bench --output /tmp/graph.json
+python scripts/benchmark_graph.py --workload gemm_epilogue \
     --rows 128 --cols 192 --k 256 --dtype bfloat16 --bench
-python examples/ascend/torch_compile.py --target pto \
+python scripts/benchmark_graph.py --target pto \
     --execution-backend pto --bench --output /tmp/pto-graph.json \
     --source-dir /tmp/pto-graph-sources
 ```
