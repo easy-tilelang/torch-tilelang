@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "torch-tilelang"
 version = "0.1.0.dev0"
 description = "A torch.compile backend powered by TileLang, initially supporting Ascend"
-readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -15,7 +14,6 @@ dependencies = ["torch", "tilelang"]
 [project.urls]
 Repository = "https://github.com/easy-tilelang/torch-tilelang"
 Issues = "https://github.com/easy-tilelang/torch-tilelang/issues"
-Documentation = "https://github.com/easy-tilelang/torch-tilelang/blob/main/docs/ascend.md"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "ruff"]
