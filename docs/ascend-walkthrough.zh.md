@@ -180,6 +180,40 @@ def backend(gm, example_inputs, **kwargs):
 
 ### 4.4 阶段 3：图捕获、安全判定与分区
 
+#### 分区是什么意思？
+
+**分区就是把计算图中的算子分成若干组，让各组交给合适的执行方式处理。** 本仓库把支持的算子组成 TileLang 子图，不支持但确认无副作用的算子可以留在 Torch 中执行，从而让同一张图混合使用两种执行方式。
+
+例如，下面的模型在支持的 NPU 输入上运行：
+
+```python
+def model(x, bias, scale):
+    a = x + bias
+    b = torch.relu(a)
+    c = torch.sin(b)
+    return c * scale
+```
+
+加法、ReLU 和乘法在当前支持范围内；`sin` 被视为无副作用的 Torch 算子，但没有纳入 TileLang 编译范围。因此会形成以下执行流程：
+
+```text
+x、bias
+   ↓
+[分区 1：add → relu]    TileLang 执行
+   ↓
+sin                    Torch 执行
+   ↓
+[分区 2：mul]           TileLang 执行（同时读取 scale）
+   ↓
+y
+```
+
+分区之间传递的仍然是 Torch Tensor，整个模型按图中的依赖执行。这里划分的是计算图中的算子组，并不切分输入张量。若图中含有变异、别名操作或不透明副作用，则先由下述安全判定决定整图降级或报错。
+
+**一个分区不一定对应一个 kernel。** 分区决定哪些算子作为一个子图交给 TileLang 编译；融合决定其中哪些算子能合成更少的 kernel。例如本文的 `add → relu → mul` 属于一个分区，但默认 `fusion="off"` 时生成三个 kernel。即使调用了 `fuse_partitions`，也只是把图节点封装成分区模块，不代表已经完成 kernel 融合。启用 `fusion="profile"` 后，融合候选还需通过调度、数值校验和性能检查，才可能被采用。
+
+#### 代码中的分区流程
+
 `backend.py:304-334`：
 
 1. **副作用判定** `_has_unsafe_effects`（`backend.py:106`）：
@@ -465,7 +499,7 @@ python examples/ascend/test_torch_compile.py --device npu:1 --dtype bfloat16 --s
 | --- | --- |
 | Dynamo | PyTorch 图捕获前端 |
 | FX GraphModule | Dynamo 产出的可分析图 |
-| Partition | 可整体编译的连续算子组 |
+| Partition（分区） | 按算子支持能力划出的子图，作为整体尝试编译；可包含多个 kernel，见第 4.4 节 |
 | Relax | TVM 的图级 IR |
 | PrimFunc / call_tir | 可调度 TIR 函数及其图级调用 |
 | SIMT_VF | Ascend 向量/SIMT 执行域 |

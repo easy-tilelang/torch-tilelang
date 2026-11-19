@@ -198,6 +198,10 @@
     #pipeline .flow-panel h3 { margin: 0 0 10px; color: var(--ink); font-size: clamp(19px, 2vw, 23px); line-height: 1.4; }
     #pipeline .flow-panel p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.75; overflow-wrap: anywhere; }
     #pipeline .flow-panel code { font: .87em/1.5 var(--mono); color: var(--ink); }
+    #pipeline .partition-note { margin-block: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #f2f7f2; min-width: 0; }
+    #pipeline .partition-note summary { cursor: pointer; color: var(--teal); font-size: 16px; font-weight: 650; }
+    #pipeline .partition-note[open] summary { margin-bottom: 8px; }
+    #pipeline .partition-note pre { margin: 12px 0; padding: 12px; overflow-x: auto; background: white; border-radius: 5px; font-size: 14px; line-height: 1.75; }
     #pipeline .flow-io { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 18px 0; gap: 12px; }
     #pipeline .flow-io > div { border-left: 2px solid #c6ddcf; padding-left: 10px; }
     #pipeline .flow-io dt { color: var(--muted); font-size: 12px; line-height: 1.6; }
@@ -551,6 +555,14 @@
     <article id="flow-capture" class="flow-panel">
       <h3>从 FX 图划出可编译的分区</h3>
       <p>Dynamo 把捕获的图交给 <code>tilelang_backend</code>。后端检查原地修改、别名和前向钩子，再把受支持的算子组合成分区。像 <code>torch.sin</code> 这样的纯算子可以留给 PyTorch，与编译分区一起执行。每个分区在第一次收到真实张量时编译。</p>
+      <details class="partition-note">
+        <summary>分区是什么意思？</summary>
+        <p><strong>把计算图中的算子分组，交给不同的执行方式处理。</strong> 例如加法、ReLU 和乘法可交给 TileLang，暂不支持的 <code>sin</code> 留在 Torch：</p>
+        <pre tabindex="0" aria-label="TileLang 分区与 Torch 算子交替执行"><code>[add → relu] → sin → [mul]
+ 分区 1        Torch   分区 2
+ TileLang              TileLang</code></pre>
+        <p>分区之间传递 Torch Tensor。<strong>一个分区可以包含多个 kernel</strong>；本文的 <code>add → relu → mul</code> 是一个分区，默认未融合时仍启动三个内核。</p>
+      </details>
       <dl class="flow-io"><div><dt>输入</dt><dd>FX GraphModule、样例输入和后端选项</dd></div><div><dt>输出</dt><dd>含 <code>_CompiledPartition</code> 子模块的可调用图</dd></div></dl>
       <p class="flow-edge">含副作用、输入含非张量或全图没有可编译分区时，默认交回 PyTorch 执行。开启 <code>strict=True</code> 会在这些情形下报错。</p>
       <div class="flow-sources"><span>对应源码</span><a data-preview="partition" href="../src/torch_tilelang/backend.py">backend.py · make_backend</a></div>
