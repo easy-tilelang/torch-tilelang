@@ -167,8 +167,7 @@ def run(args, result):
                 args.output.with_suffix(".progress.json").write_text(json.dumps(sample, indent=2) + "\n")
                 next_sample = sample["elapsed_seconds"] + 30
         samples.append(memory_sample(start, calls))
-        # Same live input/output shapes after warmup: retained device tensors
-        # must not grow. Reserved allocator caches are recorded independently.
+        # Compare live allocations against warmup. Reserved memory includes allocator caches.
         validate_memory_samples(samples)
         result.update(elapsed_seconds=time.monotonic() - start, calls=calls, memory_samples=samples, cases=[])
         for case in cases:

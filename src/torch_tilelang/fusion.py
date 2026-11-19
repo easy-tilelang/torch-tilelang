@@ -1,8 +1,7 @@
 """Conservative TIR fusion and measured selection for Torch graph execution.
 
-Relax owns grouping and buffer substitution.  The Ascend scheduler must still
-prove that each resulting PrimFunc has a supported local execution schedule;
-FuseTIR alone does not establish on-chip placement.
+Relax groups calls and substitutes buffers. The Ascend scheduler decides
+whether it can lower the fused PrimFunc and where intermediates are stored.
 """
 
 from __future__ import annotations
@@ -28,13 +27,9 @@ class GraphValidationError(RuntimeError):
 
 
 def make_fusion_candidate(mod: tvm.IRModule) -> tvm.IRModule:
-    """Group pure call_tir producers before target scheduling.
+    """Build a fused candidate from unscheduled call_tir functions.
 
-    This deliberately uses the TVM revision shipped with TileLang instead of
-    importing the reference PR's copied FuseTIR or scheduled-block canonicalizer.
-    VF regions do not exist yet, so this pass cannot flatten their boundaries.
-    Unsupported fused groups are rejected by target scheduling and the caller
-    retains its independently compiled baseline.
+    The caller retains the original module as its unfused baseline.
     """
     return tvm.transform.Sequential(
         [
@@ -47,7 +42,7 @@ def make_fusion_candidate(mod: tvm.IRModule) -> tvm.IRModule:
 
 
 def kernel_count(mod: tvm.IRModule) -> int:
-    """Count actual call sites, rather than unused PrimFunc definitions."""
+    """Count relax.call_tir sites in the body of main."""
     count = 0
 
     def visit(expr):
@@ -74,10 +69,10 @@ def has_reduction(mod: tvm.IRModule) -> bool:
 
 
 def output_reduction_flags(mod: tvm.IRModule) -> tuple[bool, ...]:
-    """Track reduction dependence per output, not per graph.
+    """Propagate reduction flags to the leaves of the graph result.
 
-    An unrelated injective output must not inherit a reduction's looser
-    tolerance merely because both appear in the same graph result tuple.
+    All results of a call share one flag. It is set if the kernel contains
+    a reduction or any of its inputs depends on one.
     """
     reductions = {gv: has_reduction(tvm.IRModule({gv: func})) for gv, func in mod.functions.items() if isinstance(func, tirx.PrimFunc)}
     env = {param: False for param in mod["main"].params}
@@ -195,11 +190,11 @@ def select_fusion(
     reference: Callable | None = None,
     benchmark: Callable | None = None,
 ) -> SelectedRunner:
-    """Require numerical validity, repeatable speedup, and graph non-regression.
+    """Select a validated candidate using device and partition wall times.
 
-    Alternate execution order to reduce drift. Empty/non-finite measurements
-    never imply a win. A caller supplying a benchmark must propagate device
-    failures; returning None represents unavailable measurement.
+    Measurement rounds alternate execution order to reduce drift. A benchmark
+    returns milliseconds or reports missing samples with None or
+    MeasurementUnavailableError. Device execution errors propagate.
     """
     reference = baseline if reference is None else reference
     validate_runner(baseline, reference, example_inputs, config=config)

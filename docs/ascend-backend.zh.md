@@ -4,9 +4,9 @@
 
 ## 从 FX 图到分区
 
-可以用 `options={"target": "ascendc"}` 或 `options={"target": "pto"}` 为单个图指定编译目标。省略 `target` 时读取环境变量 `TILELANG_DEFAULT_TARGET`，两者都未设置时使用面向 `dav-3510` 的 AscendC。旧后端名 `torch_tilelang_ascend` 仍可使用。当前支持的设备为 Ascend NPU，尚未支持 CUDA。
+后端先确定 AscendC 或 PTO 编译目标及其执行适配器，并检查 TileLang 是否提供对应的代码生成器。目标和适配器不兼容、代码生成器缺失等错误在分区前就会抛出。[目标配置与用法](ascend.md) · [目标解析](../src/torch_tilelang/compat/tilelang.py)
 
-后端先根据配置确定编译目标和执行适配器，再检查图中是否有影响分区安全的操作，例如原地修改张量。对于可以安全分区的图，后端用 `_CompiledPartition` 包装每个支持的分区，其余节点仍由 PyTorch 执行。一个分区可以包含多个内核。[分区逻辑](../src/torch_tilelang/backend.py)
+后端接着检查 FX 图。原地修改张量等操作会让整张图默认留在 PyTorch。对于可以安全分区的图，后端用 `_CompiledPartition` 包装每个支持的分区。`torch.sin` 等已知的纯算子可以留在两个编译分区之间，由 PyTorch 执行。一个分区可以包含多个内核。[分区逻辑](../src/torch_tilelang/backend.py)
 
 下图展示一个分区成功编译后的执行路径，以及后续调用如何复用执行器。
 
@@ -32,12 +32,12 @@ flowchart TD
 
 ## 后续调用如何复用执行器
 
-每个分区保存最近一次调用的输入签名和对应的执行器。输入签名包括张量的形状、数据类型、设备、步幅、存储偏移和梯度状态。如果只有张量的值发生变化，分区就直接调用已有的执行器。签名发生变化时，分区会针对新输入重新准备执行器。[签名计算与执行器复用](../src/torch_tilelang/backend.py)
+每个分区只保存最近一次准备好的执行器。签名包含当前的梯度跟踪模式，以及每个输入张量的形状、数据类型、设备、步幅、存储偏移和 `requires_grad`。仅改变张量的值会复用执行器。签名变化时，分区重新准备执行器。[签名计算与执行器复用](../src/torch_tilelang/backend.py)
 
 每次运行已编译的分区时，执行器都按计划逐个启动内核。每个内核调用前，执行器先用 PyTorch 分配输出张量，再将输入和输出张量交给执行适配器。内核在当前 NPU 流上运行，分区最后返回计划指定的输出。[内核调用与张量分配](../src/torch_tilelang/runtime.py)
 
 ## 失败时如何处理
 
-默认情况下，如果分区编译失败，或基础执行计划的输出未通过校验，后端会回退到该分区原有的 PyTorch 实现。启用 `strict=True` 后，这两类失败会直接抛出异常。如果只是融合方案编译失败，后端仍可使用已验证的基础计划。设备执行期间发生的错误会直接传给调用方。[回退与错误处理](../src/torch_tilelang/backend.py)
+默认情况下，如果分区编译失败，或基础执行计划的输出未通过校验，后端会回退到该分区原有的 PyTorch 实现。启用 `strict=True` 后，这两类失败会直接抛出异常。即使开启严格模式，支持分区之间仍允许执行纯 PyTorch 节点，融合方案被拒绝时仍会使用已验证的基础计划。设备执行期间发生的错误会直接传给调用方。[回退与错误处理](../src/torch_tilelang/backend.py)
 
-要确认某个分区实际走了哪条路径，可以查看后端返回函数上的 `graph_report.partitions`。每个分区的记录都包含所选后端、执行计划中的内核调用数，以及编译路径和回退路径各自的调用次数。发生回退时，记录中还会给出原因。[分区报告](../src/torch_tilelang/backend.py)
+要确认是否运行了 TileLang 内核，可以在传给 Dynamo 的后端函数中保存返回执行器的 `graph_report`。整图回退时，原因在 `graph_report.fallback_reason` 中。如果图被分区，`graph_report.partitions` 会列出各分区的目标后端、执行适配器、计划中的内核调用点数，以及编译路径和回退路径各自的调用次数。[报告采集示例](../tests/ascend/test_backend.py)

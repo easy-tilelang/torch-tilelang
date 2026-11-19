@@ -61,10 +61,11 @@ def _compile_kernel(func: tirx.PrimFunc, config: GraphConfig) -> Callable:
 
 
 class TorchGraphRunner:
-    """Execute precompiled TIR kernels with fresh Torch-owned outputs.
+    """Compile kernels at construction and execute them on Torch tensors.
 
-    Compilation is eager when constructing the runner. Runtime failures from a
-    kernel are propagated; the executor never retries after a device error.
+    Each kernel call allocates fresh outputs. Graph results can also refer
+    directly to inputs or reuse the same tensor in multiple tuple positions.
+    Kernel execution errors propagate to the caller.
     """
 
     def __init__(self, mod: tvm.IRModule, config: GraphConfig, kernel_compiler: Callable | None = None):
@@ -250,9 +251,8 @@ class TorchGraphRunner:
                 raise ValueError("Graph input does not match its compiled shape, dtype, device, or layout")
         values = list(args) + [None] * (self._num_slots - len(args))
 
-        # The existing kernel adapter supplies Torch's current NPU stream to
-        # TVM-FFI. Keep raw Torch tensors at this boundary instead of wrapping
-        # them in TVM tensors, which would bypass that exchange hook.
+        # Native kernel adapters receive Torch tensors and launch on the
+        # current NPU stream for the inputs' device.
         context = torch.npu.device(device) if device.type == "npu" else torch.device(device)
         with context:
             if device.type == "npu":

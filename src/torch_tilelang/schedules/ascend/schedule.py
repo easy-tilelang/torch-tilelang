@@ -8,11 +8,11 @@ from .elementwise import ElementwiseScheduleError, schedule_elementwise
 
 
 class UnsupportedScheduleError(ValueError):
-    """The initial Ascend graph schedule families cannot lower this function."""
+    """No Ascend graph schedule could lower the function with this configuration."""
 
 
 def schedule_primfunc(func: tirx.PrimFunc, config=None) -> tirx.PrimFunc:
-    """Select an Ascend schedule without falling through to GPU templates."""
+    """Try the injective, reduction, and GEMM schedules in order."""
     try:
         return schedule_elementwise(func, config)
     except ElementwiseScheduleError as error:

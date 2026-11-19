@@ -1,9 +1,4 @@
-"""Hardware-free tests for graph conversion, allocation, partitioning and fallback.
-
-The injected compiler below replaces device kernels only. Tests still exercise
-the real FX importer, Relax legalization, call_tir ABI and Torch graph executor.
-Native Ascend compilation and stream integration have separate NPU coverage.
-"""
+"""Exercise FX import, Relax legalization and graph execution with injected CPU kernels."""
 
 from __future__ import annotations
 

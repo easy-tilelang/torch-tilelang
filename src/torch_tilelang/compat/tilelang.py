@@ -12,7 +12,7 @@ from ..frontend import UnsupportedGraphError
 
 
 def resolve_graph_context(config: GraphConfig):
-    """Validate the existing AscendC/PTO pair without probing the NPU."""
+    """Resolve the target and execution adapter and check native codegen availability."""
     from tilelang.backend import create_backend_context
 
     target = config.target.strip()

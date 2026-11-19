@@ -1,8 +1,4 @@
-"""Check a weighted RMSNorm module with float32 statistics through torch.compile.
-
-Run directly or with pytest; --device, --dtype and --seed are optional:
-    python examples/ascend/test_torch_compile_rmsnorm.py
-"""
+"""Check a weighted RMSNorm module with float32 statistics through torch.compile."""
 
 import sys
 

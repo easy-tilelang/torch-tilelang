@@ -18,7 +18,7 @@ _SCALAR_INTRINSICS = tuple(tvm.ir.Op.get(name) for name in ("tirx.exp", "tirx.sq
 
 
 class ElementwiseScheduleError(ValueError):
-    """A valid TIR function is outside the initial injective schedule family."""
+    """The function or configuration is unsupported by the injective schedule."""
 
 
 @tirx.functor.mutator
