@@ -284,6 +284,33 @@
       .dep-edge.far { opacity: 1; }
       .dep-graph { break-inside: avoid; }
     }
+    .mechanism-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .mechanism-card { padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: white; min-width: 0; }
+    .mechanism-card h3 { font-size: 1.08rem; margin-bottom: 8px; }
+    .mechanism-card p { color: var(--muted); font-size: .95rem; }
+    .mechanism-card a { display: inline-block; margin-top: 10px; font-size: .88rem; }
+    .verification-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: white; }
+    .verification-row { display: grid; grid-template-columns: minmax(9rem, .65fr) minmax(0, 2fr) minmax(10rem, 1fr); gap: 16px; padding: 16px 20px; align-items: baseline; }
+    .verification-row + .verification-row { border-top: 1px solid var(--line); }
+    .verification-row h3 { font-size: 1rem; }
+    .verification-row p, .verification-row a { font-size: .92rem; overflow-wrap: anywhere; }
+    .verification-row p { color: var(--muted); }
+    .verification-commands { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 14px 20px; background: #edf5ef; }
+    .verification-commands summary { color: var(--teal); font-weight: 600; cursor: pointer; }
+    .verification-commands p { margin-top: 12px; color: var(--muted); font-size: .92rem; }
+    .verification-commands pre { overflow-x: auto; padding: 12px; background: white; border-radius: 5px; font-size: .85rem; }
+    .topbar nav { gap: clamp(.7rem, 1.6vw, 1.6rem); }
+    @media (min-width: 701px) and (max-width: 1100px) {
+      .topbar-inner { flex-wrap: wrap; gap: 0; padding-top: .4rem; }
+      .topbar nav { width: 100%; justify-content: space-between; }
+      .topbar nav a { padding-block: .45rem; }
+    }
+    @media (max-width: 700px) {
+      .topbar nav { overflow-x: auto; justify-content: flex-start; gap: 1.1rem; }
+      .topbar nav a { flex: none; }
+      .mechanism-grid { grid-template-columns: 1fr; }
+      .verification-row { grid-template-columns: 1fr; gap: 6px; }
+    }
   </style>
 </head>
 <body id="top">
@@ -315,6 +342,8 @@
       <a href="#overview" aria-current="location">项目全景</a>
       <a href="#pipeline">编译流程</a>
       <a href="#modules">模块依赖</a>
+      <a href="#mechanisms">关键机制</a>
+      <a href="#verification">验证体系</a>
       <a href="#example">示例走读</a>
     </nav>
   </div>
@@ -851,6 +880,76 @@
   </script>
 
 </section>
+    <section id="mechanisms" class="content-section" aria-labelledby="mechanisms-title">
+      <div class="section-heading">
+        <h2 id="mechanisms-title"><svg class="section-icon" aria-hidden="true"><use href="#i-chip"/></svg>关键机制</h2>
+        <p>理解图编译背后的四个约束：数值、内存、性能与失败处理。</p>
+      </div>
+      <div class="mechanism-grid">
+        <article class="mechanism-card">
+          <h3>数值语义与结果校验</h3>
+          <p>归约与 GEMM 使用 FP32 累加，并保留低精度运算的舍入边界、NaN 和有符号零语义。采用基线前先与 Torch 参考结果对验，按各输出是否依赖归约选择误差容限。</p>
+          <a data-preview="validate" href="../src/torch_tilelang/fusion.py">fusion.py · validate_runner</a>
+        </article>
+        <article class="mechanism-card">
+          <h3>Torch 管理内存与执行流</h3>
+          <p>输出和中间张量由 Torch 分配。执行计划在中间值最后一次使用后释放引用；内核沿用当前 NPU 流，并通过 record_stream 记录输入的使用，保护异步执行期间的内存生命周期。</p>
+          <a data-preview="execute" href="../src/torch_tilelang/runtime.py">runtime.py · TorchGraphRunner</a>
+        </article>
+        <article class="mechanism-card">
+          <h3>以实测决定融合</h3>
+          <p>默认关闭融合。启用 fusion="profile" 后，候选需通过正确性校验与至少三轮交替计时，默认要求设备耗时改善至少 5%、计时波动不超过 2%，且整图耗时回退不超过 2%。证据不足时保留基线。</p>
+          <a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py · select_fusion</a>
+        </article>
+        <article class="mechanism-card">
+          <h3>复用与可观察的降级</h3>
+          <p>每个分区保留最近一次输入签名和 runner，相同签名复用执行计划；内核编译缓存由 TileLang 提供。graph_report 记录编译状态、内核数、降级原因与融合决策。默认允许编译或校验失败后降级；设备执行错误直接传播。</p>
+          <a data-preview="signature" href="../src/torch_tilelang/backend.py">backend.py · _CompiledPartition</a>
+        </article>
+      </div>
+    </section>
+    <section id="verification" class="content-section" aria-labelledby="verification-title">
+      <div class="section-heading">
+        <h2 id="verification-title"><svg class="section-icon" aria-hidden="true"><use href="#i-layers"/></svg>验证体系</h2>
+        <p>从无设备单元测试到 NPU 长时间运行，分别验证转换、编译、执行与性能。</p>
+      </div>
+      <div class="verification-list">
+        <article class="verification-row">
+          <h3>单元与接口</h3>
+          <p>验证 FX→Relax、执行计划、张量生命周期、分区降级、融合决策和后端注册。CPU 测试通过注入 kernel 编译器覆盖执行器；部分用例仍需 Ascend 版 TileLang。</p>
+          <a href="../tests/unit/">tests/unit/</a>
+        </article>
+        <article class="verification-row">
+          <h3>调度与源码生成</h3>
+          <p>检查逐元素、末轴归约和 GEMM 的调度结构、拒绝边界及 AscendC/PTO 源码生成。无需执行设备内核，但需要对应 codegen 和相关工具链。</p>
+          <a href="../tests/ascend/test_schedule.py">test_schedule.py</a>
+        </article>
+        <article class="verification-row">
+          <h3>NPU 端到端</h3>
+          <p>对照 Torch 验证逐元素、Softmax、RMSNorm 和 GEMM，覆盖多种 dtype、当前流、旧输出及真实后端适配器。PTO 另有跨进程磁盘缓存重载测试。</p>
+          <a data-preview="test" href="../tests/ascend/test_backend.py">test_backend.py</a>
+        </article>
+        <article class="verification-row">
+          <h3>稳定性与性能</h3>
+          <p>Soak 持续更新输入、检查结果与内存趋势；benchmark 区分重新分块和融合收益。验收脚本汇总环境、回归、示例、计时与日志，AscendC 和 PTO 分别留存结果。</p>
+          <a href="../scripts/verify_npu.py">scripts/verify_npu.py</a>
+        </article>
+      </div>
+      <details class="verification-commands">
+        <summary>查看常用验证命令</summary>
+        <p>先按安装手册安装本项目。单元测试无需 NPU；源码生成需 Ascend 版 TileLang，设备验收另需 torch_npu、CANN 与 NPU，PTO 还需对应工具链。</p>
+        <pre tabindex="0" aria-label="分层验证命令"><code># 单元测试
+python -m pytest tests/unit -q -ra
+
+# AscendC 源码生成：排除设备执行和 PTO
+python -m pytest tests/ascend -q -ra -m "not ascend and not pto"
+
+# 完整 NPU 验收：默认 AscendC，另加 PTO 全流程
+python scripts/verify_npu.py --stage all --include-pto</code></pre>
+        <p>跳过的用例不代表验证通过；检查报告中的实际后端、compiled 状态和 kernel 数，确认执行了目标内核。</p>
+      </details>
+      <div class="related"><strong>验证入口</strong><a data-preview="install" href="install.zh.md">安装与环境要求</a><a href="../scripts/npu_soak.py">长时间运行检查</a><a href="../scripts/benchmark_graph.py">性能对比</a><a href="../tests/ascend/test_pto_cache.py">PTO 缓存重载</a></div>
+    </section>
     <section id="example" class="content-section" aria-labelledby="example-title">
       <div class="section-heading">
         <h2 id="example-title"><svg class="section-icon" aria-hidden="true"><use href="#i-code"/></svg>示例走读</h2>
