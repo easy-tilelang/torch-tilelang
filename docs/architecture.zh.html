@@ -105,6 +105,42 @@
     .trace-shapes code { font-size: .9rem; padding: .15rem .5rem; border-radius: 4px; background: #edf5ef; color: var(--teal); }
     .trace p { color: var(--muted); margin-block: .65rem; }
     .source-link { gap: .4rem; width: fit-content; font-weight: 600; font-size: .92rem; }
+    #source-preview {
+      position: fixed; z-index: 12; display: flex; flex-direction: column;
+      width: min(44rem, calc(100% - 24px)); max-height: min(29rem, calc(100% - 24px));
+      background: #fcfdfa; border: 1px solid #88af9d; border-radius: 11px;
+      box-shadow: 0 8px 35px #173c3436; overflow: hidden;
+    }
+    #source-preview[hidden] { display: none; }
+    .preview-heading, .preview-footer { display: flex; align-items: center; gap: .7rem; padding: .65rem .95rem; }
+    .preview-heading > svg { color: var(--teal); }
+    .preview-heading > div { min-width: 0; flex: 1; }
+    #preview-symbol { font: 650 1rem/1.45 var(--mono); overflow-wrap: anywhere; }
+    #preview-path { color: var(--muted); font: .84rem/1.5 var(--mono); overflow-wrap: anywhere; }
+    #preview-close {
+      display: grid; place-items: center; flex: none; width: 2.4rem; height: 2.4rem;
+      border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); cursor: pointer;
+    }
+    #preview-close:hover { background: #eaf4ee; }
+    .preview-body {
+      display: flex; overflow: auto; overscroll-behavior: contain; min-height: 0;
+      padding-block: .7rem; background: #173d37; color: #e6f2ed;
+      font: .9rem/1.65 var(--mono); tab-size: 4;
+    }
+    #preview-numbers {
+      position: sticky; left: 0; align-self: flex-start; padding-inline: .7rem; user-select: none;
+      white-space: pre; text-align: right; color: #add1bd; background: #173d37; border-right: 1px solid #507267;
+    }
+    .preview-body pre { margin: 0; padding-inline: .8rem; font: inherit; white-space: pre; }
+    .preview-footer { justify-content: space-between; gap: .4rem; font-size: .88rem; }
+    #preview-range { color: var(--muted); }
+    .preview-footer a { font-weight: 600; }
+    #source-preview :focus-visible { outline-offset: -3px; }
+    @media (max-width: 600px) {
+      #source-preview { inset: auto 12px max(12px, env(safe-area-inset-bottom)); width: auto; max-height: 58vh; max-height: 58dvh; }
+      .preview-heading, .preview-footer { padding: .5rem .7rem; }
+    }
+    @media print { #source-preview { display: none; } }
     .related { display: flex; align-items: baseline; gap: .65rem 1.5rem; flex-wrap: wrap; padding-block: 1.15rem; }
     .related a { font-size: .94rem; }
     .page-footer { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .5rem 1rem; margin-top: 2rem; border-top: 1px solid var(--line); padding-block: 1.3rem 1.7rem; color: var(--muted); font-size: .9rem; }
@@ -268,7 +304,7 @@
   <div class="hero">
     <div class="wrap hero-inner">
       <div class="hero-copy">
-        <div class="breadcrumb"><a href="README.md">开发者文档</a><span aria-hidden="true">/</span>架构导览</div>
+        <div class="breadcrumb"><a data-preview="index" href="README.md">开发者文档</a><span aria-hidden="true">/</span>架构导览</div>
         <h1>从 PyTorch 图<br><span>到 Ascend 内核</span></h1>
         <p>torch-tilelang 是 PyTorch 的推理编译后端。它从计算图中取出可编译的分区，借助 TileLang 生成内核，在昇腾 NPU 上执行。</p>
         <div class="hero-actions">
@@ -468,10 +504,10 @@
           <div class="map-node internal">
             <div class="node-title"><h3>torch-tilelang</h3><small>项目内部</small></div>
             <div class="map-parts">
-              <a href="../src/torch_tilelang/backend.py"><strong>识别与分区</strong><code>backend.py</code></a>
-              <a href="../src/torch_tilelang/frontend.py"><strong>FX 转 Relax</strong><code>frontend.py</code></a>
-              <a href="../src/torch_tilelang/schedules/ascend/schedule.py"><strong>Ascend 调度</strong><code>schedule.py</code></a>
-              <a href="../src/torch_tilelang/runtime.py"><strong>图执行器</strong><code>runtime.py</code></a>
+              <a data-preview="partition" href="../src/torch_tilelang/backend.py"><strong>识别与分区</strong><code>backend.py</code></a>
+              <a data-preview="import" href="../src/torch_tilelang/frontend.py"><strong>FX 转 Relax</strong><code>frontend.py</code></a>
+              <a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py"><strong>Ascend 调度</strong><code>schedule.py</code></a>
+              <a data-preview="execute-plan" href="../src/torch_tilelang/runtime.py"><strong>图执行器</strong><code>runtime.py</code></a>
             </div>
           </div>
           <span class="wire" aria-hidden="true"></span>
@@ -502,35 +538,35 @@
       <p>Dynamo 把捕获的图交给 <code>tilelang_backend</code>。后端检查原地修改、别名和前向钩子，再把受支持的算子组合成分区。像 <code>torch.sin</code> 这样的纯算子可以留给 PyTorch，与编译分区一起执行。每个分区在第一次收到真实张量时编译。</p>
       <dl class="flow-io"><div><dt>输入</dt><dd>FX GraphModule、样例输入和后端选项</dd></div><div><dt>输出</dt><dd>含 <code>_CompiledPartition</code> 子模块的可调用图</dd></div></dl>
       <p class="flow-edge">含副作用、输入含非张量或全图没有可编译分区时，默认交回 PyTorch 执行。开启 <code>strict=True</code> 会在这些情形下报错。</p>
-      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/backend.py">backend.py · make_backend</a></div>
+      <div class="flow-sources"><span>对应源码</span><a data-preview="partition" href="../src/torch_tilelang/backend.py">backend.py · make_backend</a></div>
     </article>
     <article id="flow-import" class="flow-panel">
       <h3>把分区转换成 Relax 与 TIR</h3>
       <p><code>fx_to_relax</code> 根据张量形状与类型翻译运算。Relax 描述数据怎样流动。合法化步骤把运算展开成可调度的 TIR 函数，由 <code>relax.call_tir</code> 引用。</p>
       <dl class="flow-io"><div><dt>输入</dt><dd>一个 FX 分区及其真实 NPU 张量</dd></div><div><dt>输出</dt><dd>包含 Relax 主函数和未调度 PrimFunc 的 IRModule</dd></div></dl>
       <p class="flow-edge">分区要求同一 NPU 上的连续推理张量，每维为正的静态整数，存储偏移为零，支持 float16、bfloat16、float32。默认配置下，输入校验或转换失败会回退到该分区的 PyTorch 实现。</p>
-      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/frontend.py">frontend.py · fx_to_relax</a></div>
+      <div class="flow-sources"><span>对应源码</span><a data-preview="import" href="../src/torch_tilelang/frontend.py">frontend.py · fx_to_relax</a></div>
     </article>
     <article id="flow-lower" class="flow-panel">
       <h3>为每个内核选择 Ascend 调度</h3>
       <p><code>build_runner</code> 收集主函数引用的 PrimFunc。调度器依次尝试逐元素、归约和矩阵乘规则。匹配成功后，兼容层把调度结果交给 <code>tilelang.compile</code>。运行时再把调用顺序整理成执行计划。</p>
       <dl class="flow-io"><div><dt>输入</dt><dd>未调度的 PrimFunc 和目标配置</dd></div><div><dt>输出</dt><dd>持有已编译内核及执行计划的基线 runner</dd></div></dl>
       <p class="flow-edge">AscendC 使用 <code>tvm_ffi</code> 执行适配器，PTO 使用 <code>pto</code> 适配器。分区内核缺少适用调度时，默认回退到 PyTorch。严格模式会抛出错误。</p>
-      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py · schedule_primfunc</a><a href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py · compile_kernel</a></div>
+      <div class="flow-sources"><span>对应源码</span><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py · schedule_primfunc</a><a data-preview="compile" href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py · compile_kernel</a></div>
     </article>
     <article id="flow-validate" class="flow-panel">
       <h3>先与 eager 对验，再决定是否融合</h3>
       <p>后端用相同输入运行基线与原始分区，对比输出。默认 <code>fusion="off"</code>，通过校验即可使用基线。设为 <code>"profile"</code> 时，还会另行编译融合候选并比较正确性、设备耗时与整段执行耗时。</p>
       <dl class="flow-io"><div><dt>输入</dt><dd>基线 runner、原始分区和同一组输入</dd></div><div><dt>输出</dt><dd>经过验证的基线，或实测通过的融合 runner</dd></div></dl>
       <p class="flow-edge">基线结果不符时，默认使用 eager。融合候选未通过校验或性能门槛时，保留基线。设备执行错误会向上传递。</p>
-      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/fusion.py">fusion.py · validate_runner / select_fusion</a></div>
+      <div class="flow-sources"><span>对应源码</span><a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py · validate_runner / select_fusion</a></div>
     </article>
     <article id="flow-launch" class="flow-panel">
       <h3>按计划执行，把张量交还给 Torch</h3>
       <p><code>TorchGraphRunner</code> 在 Torch 当前 NPU 流上依次启动内核，由 Torch 为输出分配空间，并在中间值最后一次使用后释放对应的引用。</p>
       <dl class="flow-io"><div><dt>输入</dt><dd>已选 runner 和本次调用的张量</dd></div><div><dt>输出</dt><dd>由 Torch 持有的结果张量或张量元组</dd></div></dl>
       <p class="flow-edge">每个分区保留最近一次签名及其 runner。形状、类型、设备、步幅、存储偏移、梯度状态等相同时直接复用，签名变化时重新准备。</p>
-      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/runtime.py">runtime.py · TorchGraphRunner</a><a href="../src/torch_tilelang/backend.py">backend.py · _CompiledPartition</a></div>
+      <div class="flow-sources"><span>对应源码</span><a data-preview="execute" href="../src/torch_tilelang/runtime.py">runtime.py · TorchGraphRunner</a><a data-preview="signature" href="../src/torch_tilelang/backend.py">backend.py · _CompiledPartition</a></div>
     </article>
   </div>
   <script>
@@ -587,7 +623,7 @@
   <div class="section-heading">
     <div>
       <h2 id="modules-title"><svg class="section-icon" aria-hidden="true"><use href="#i-modules"></use></svg>模块依赖</h2>
-      <p>选择一个调用方，沿箭头查看它直接使用的关键模块。点击文件名可阅读源码。</p>
+      <p>选择一个调用方，沿箭头查看它直接使用的关键模块。悬停或点按文件名可预览对应代码。</p>
     </div>
   </div>
   <div class="mod-browser">
@@ -598,34 +634,34 @@
       <input class="mod-radio" type="radio" id="mod-schedule" name="mod-caller" aria-controls="mod-view-schedule"><label class="mod-tab" for="mod-schedule">schedule.py</label>
       <input class="mod-radio" type="radio" id="mod-fusion" name="mod-caller" aria-controls="mod-view-fusion"><label class="mod-tab" for="mod-fusion">fusion.py</label>
       <div id="mod-view-backend" class="mod-view view-backend">
-        <div class="mod-source"><small>Dynamo 后端</small><h3><a href="../src/torch_tilelang/backend.py">backend.py</a></h3><p>划分 FX 图，编译并校验可执行分区。</p></div>
+        <div class="mod-source"><small>Dynamo 后端</small><h3><a data-preview="partition" href="../src/torch_tilelang/backend.py">backend.py</a></h3><p>划分 FX 图，编译并校验可执行分区。</p></div>
         <ul class="mod-targets" aria-label="backend.py 使用的模块">
-          <li><div class="mod-target"><a href="../src/torch_tilelang/config.py">config.py</a><p><code>GraphConfig</code> 收集后端选项。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/frontend.py">frontend.py</a><p><code>fx_to_relax</code> 把受支持的 FX 分区转换成 Relax IR。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/runtime.py">runtime.py</a><p><code>build_runner</code> 创建分区执行器。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>validate_runner</code> 将基线执行结果与 PyTorch 对照。</p></div></li>
+          <li><div class="mod-target"><a data-preview="config" href="../src/torch_tilelang/config.py">config.py</a><p><code>GraphConfig</code> 收集后端选项。</p></div></li>
+          <li><div class="mod-target"><a data-preview="import" href="../src/torch_tilelang/frontend.py">frontend.py</a><p><code>fx_to_relax</code> 把受支持的 FX 分区转换成 Relax IR。</p></div></li>
+          <li><div class="mod-target"><a data-preview="build-runner" href="../src/torch_tilelang/runtime.py">runtime.py</a><p><code>build_runner</code> 创建分区执行器。</p></div></li>
+          <li><div class="mod-target"><a data-preview="validate" href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>validate_runner</code> 将基线执行结果与 PyTorch 对照。</p></div></li>
         </ul>
       </div>
       <div id="mod-view-runtime" class="mod-view view-runtime">
-        <div class="mod-source"><small>图执行器</small><h3><a href="../src/torch_tilelang/runtime.py">runtime.py</a></h3><p>编译 PrimFunc，按执行计划分配张量、启动内核。</p></div>
+        <div class="mod-source"><small>图执行器</small><h3><a data-preview="execute-plan" href="../src/torch_tilelang/runtime.py">runtime.py</a></h3><p>编译 PrimFunc，按执行计划分配张量、启动内核。</p></div>
         <ul class="mod-targets" aria-label="runtime.py 使用的模块">
-          <li><div class="mod-target"><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a><p><code>schedule_primfunc</code> 选择 Ascend 调度规则。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py</a><p><code>compile_kernel</code> 调用 TileLang 编译已调度的函数。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>kernel_count</code> 统计图中的内核调用点。</p></div></li>
+          <li><div class="mod-target"><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a><p><code>schedule_primfunc</code> 选择 Ascend 调度规则。</p></div></li>
+          <li><div class="mod-target"><a data-preview="compile" href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py</a><p><code>compile_kernel</code> 调用 TileLang 编译已调度的函数。</p></div></li>
+          <li><div class="mod-target"><a data-preview="count" href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>kernel_count</code> 统计图中的内核调用点。</p></div></li>
         </ul>
       </div>
       <div id="mod-view-schedule" class="mod-view view-schedule">
-        <div class="mod-source"><small>调度分派</small><h3><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a></h3><p>先尝试逐元素调度，再依次尝试归约和矩阵乘。</p></div>
+        <div class="mod-source"><small>调度分派</small><h3><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a></h3><p>先尝试逐元素调度，再依次尝试归约和矩阵乘。</p></div>
         <ul class="mod-targets" aria-label="schedule.py 使用的模块">
-          <li><div class="mod-target"><a href="../src/torch_tilelang/schedules/ascend/elementwise.py">elementwise.py</a><p><code>schedule_elementwise</code> 为逐元素运算生成 Ascend 调度。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/schedules/ascend/operators.py">operators.py</a><p><code>try_schedule_reduction</code> 匹配末轴归约。同文件的 <code>try_schedule_gemm</code> 匹配二维 GEMM。</p></div></li>
+          <li><div class="mod-target"><a data-preview="elementwise" href="../src/torch_tilelang/schedules/ascend/elementwise.py">elementwise.py</a><p><code>schedule_elementwise</code> 为逐元素运算生成 Ascend 调度。</p></div></li>
+          <li><div class="mod-target"><a data-preview="operators" href="../src/torch_tilelang/schedules/ascend/operators.py">operators.py</a><p><code>try_schedule_reduction</code> 匹配末轴归约。同文件的 <code>try_schedule_gemm</code> 匹配二维 GEMM。</p></div></li>
         </ul>
       </div>
       <div id="mod-view-fusion" class="mod-view view-fusion">
-        <div class="mod-source"><small>融合选择</small><h3><a href="../src/torch_tilelang/fusion.py">fusion.py</a></h3><p>对照 PyTorch 校验候选执行器，再测量设备耗时和端到端耗时。</p></div>
+        <div class="mod-source"><small>融合选择</small><h3><a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py</a></h3><p>对照 PyTorch 校验候选执行器，再测量设备耗时和端到端耗时。</p></div>
         <ul class="mod-targets" aria-label="fusion.py 使用的模块">
-          <li><div class="mod-target"><a href="../src/torch_tilelang/compat/profiler.py">compat/profiler.py</a><p><code>measure</code> 为基线和融合候选采集计时样本。</p></div></li>
-          <li><div class="mod-target"><a href="../src/torch_tilelang/errors.py">errors.py</a><p><code>MeasurementUnavailableError</code> 标识计时不可用，此时保留基线方案。</p></div></li>
+          <li><div class="mod-target"><a data-preview="measure" href="../src/torch_tilelang/compat/profiler.py">compat/profiler.py</a><p><code>measure</code> 为基线和融合候选采集计时样本。</p></div></li>
+          <li><div class="mod-target"><a data-preview="error" href="../src/torch_tilelang/errors.py">errors.py</a><p><code>MeasurementUnavailableError</code> 标识计时不可用，此时保留基线方案。</p></div></li>
         </ul>
       </div>
     </fieldset>
@@ -653,10 +689,10 @@ torch.testing.<span class="tok-fn">assert_close</span>(compiled(x, bias), model(
           <div class="trace-shapes"><code>x [7, 65]</code><code>bias [65]</code></div>
           <p><code>bias</code> 广播到 7 行。三个相邻算子都受支持，Dynamo 交付的 FX 图可划成一个 TileLang 分区。</p>
           <p>在此例的默认未融合路径中，分区包含三个 <code>call_tir</code>。执行器依次启动三个内核，得到形状为 <code>[7, 65]</code> 的输出，再由测试与 PyTorch eager 结果对照。</p>
-          <a class="source-link" href="../examples/ascend/test_torch_compile.py"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>查看完整示例</a>
+          <a class="source-link" data-preview="example" href="../examples/ascend/test_torch_compile.py"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>预览示例源码</a>
         </div>
       </div>
-      <div class="related"><strong>继续阅读</strong><a href="install.zh.md">安装与环境验证</a><a href="ascend-walkthrough.zh.md">Ascend 后端详细走读</a><a href="../tests/ascend/test_backend.py">后端集成测试</a></div>
+      <div class="related"><strong>继续阅读</strong><a data-preview="install" href="install.zh.md">安装与环境验证</a><a data-preview="walkthrough" href="ascend-walkthrough.zh.md">Ascend 后端详细走读</a><a data-preview="test" href="../tests/ascend/test_backend.py">后端集成测试</a></div>
     </section>
   </div>
 </main>
@@ -684,6 +720,453 @@ torch.testing.<span class="tok-fn">assert_close</span>(compiled(x, bias), model(
   }, { passive: true });
   window.addEventListener('resize', markChapter);
   window.addEventListener('pageshow', markChapter);
+</script>
+<aside id="source-preview" role="dialog" aria-labelledby="preview-symbol" aria-describedby="preview-path" tabindex="-1" hidden>
+  <div class="preview-heading">
+    <svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>
+    <div><h3 id="preview-symbol"></h3><div id="preview-path"></div></div>
+    <button id="preview-close" type="button" aria-label="关闭预览"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+  </div>
+  <div class="preview-body" tabindex="0" role="region" aria-label="文件片段">
+    <span id="preview-numbers" aria-hidden="true"></span><pre><code id="preview-code"></code></pre>
+  </div>
+  <div class="preview-footer"><span id="preview-range"></span><a id="preview-file">打开完整文件</a></div>
+</aside>
+<script type="application/json" id="preview-excerpts">
+{
+  "partition": {
+    "file": "../src/torch_tilelang/backend.py",
+    "symbol": "make_backend",
+    "start": 314,
+    "lines": [
+      "        partitioned = fx.GraphModule(gm, deepcopy(gm.graph))",
+      "        partitioner = CapabilityBasedPartitioner(partitioned, _SupportedOperators(), allows_single_node_partition=True)",
+      "        partitions = partitioner.propose_partitions()",
+      "        if not partitions:",
+      "            if local_config.strict:",
+      "                raise UnsupportedGraphError(\"Graph has no supported Ascend partitions\")",
+      "            return _fallback(gm, \"Graph has no supported Ascend partitions\")",
+      "        partitioned = partitioner.fuse_partitions(partitions, prefix=\"tilelang_partition_\")"
+    ]
+  },
+  "signature": {
+    "file": "../src/torch_tilelang/backend.py",
+    "symbol": "_CompiledPartition.forward",
+    "start": 261,
+    "lines": [
+      "    def forward(self, *args):",
+      "        signature = _signature(args)",
+      "        with self._compile_lock:",
+      "            if signature != self._signature:",
+      "                runner, fallback_reason = self._prepare(args)"
+    ]
+  },
+  "import": {
+    "file": "../src/torch_tilelang/frontend.py",
+    "symbol": "fx_to_relax",
+    "start": 280,
+    "lines": [
+      "    mod = importer.from_fx(",
+      "        gm,",
+      "        input_info,",
+      "        keep_params_as_input=False,",
+      "        unwrap_unit_return_tuple=False,",
+      "        no_bind_return_tuple=False,",
+      "        custom_convert_map=custom_map,",
+      "    )",
+      "    return tvm.transform.Sequential(",
+      "        [",
+      "            relax.transform.LegalizeOps({f\"relax.{name}\": _legalize_binary for name in (\"add\", \"subtract\", \"multiply\", \"divide\")}),",
+      "            relax.transform.AnnotateTIROpPattern(),",
+      "            relax.transform.DeadCodeElimination(),",
+      "        ]",
+      "    )(mod)"
+    ]
+  },
+  "execute-plan": {
+    "file": "../src/torch_tilelang/runtime.py",
+    "symbol": "TorchGraphRunner._build_execution_plan",
+    "start": 194,
+    "lines": [
+      "            if isinstance(expr, relax.Call):",
+      "                inputs = tuple(compile_expr(field) for field in expr.args[1].fields)",
+      "                kernel = self.kernels[expr.args[0].name_hint]",
+      "                specs = self.output_specs[expr]",
+      "                returns_tuple = isinstance(expr.struct_info, relax.TupleStructInfo)",
+      "",
+      "                def launch(values, device):",
+      "                    outputs = tuple(torch.empty(spec.shape, dtype=spec.dtype, device=device) for spec in specs)",
+      "                    kernel(*(values[index] for index in inputs), *outputs)",
+      "                    return outputs if returns_tuple else outputs[0]",
+      "",
+      "                return emit(inputs, launch)"
+    ]
+  },
+  "execute": {
+    "file": "../src/torch_tilelang/runtime.py",
+    "symbol": "TorchGraphRunner.__call__",
+    "start": 266,
+    "lines": [
+      "                    value.record_stream(stream)",
+      "            for destination, execute, releases in self._execution_plan:",
+      "                values[destination] = execute(values, device)",
+      "                for slot in releases:",
+      "                    values[slot] = None",
+      "            return values[self._result_slot]"
+    ]
+  },
+  "build-runner": {
+    "file": "../src/torch_tilelang/runtime.py",
+    "symbol": "build_runner",
+    "start": 274,
+    "lines": [
+      "def build_runner(",
+      "    mod: tvm.IRModule,",
+      "    config: GraphConfig | None = None,",
+      "    *,",
+      "    kernel_compiler: Callable[[tirx.PrimFunc, GraphConfig], Callable] | None = None,",
+      ") -> TorchGraphRunner:",
+      "    \"\"\"Compile a legalized Relax graph for Torch-owned tensor execution.\"\"\"",
+      "    return TorchGraphRunner(mod, config or GraphConfig(), kernel_compiler)"
+    ]
+  },
+  "validate": {
+    "file": "../src/torch_tilelang/fusion.py",
+    "symbol": "validate_runner",
+    "start": 148,
+    "lines": [
+      "    with torch.no_grad():",
+      "        expected = _snapshot(reference(*inputs))",
+      "        actual = runner(*inputs)",
+      "        _assert_outputs_close(",
+      "            actual,",
+      "            expected,",
+      "            reduction=bool(getattr(runner, \"has_reduction\", False)),",
+      "            output_reductions=getattr(runner, \"output_reductions\", None),",
+      "        )"
+    ]
+  },
+  "fusion": {
+    "file": "../src/torch_tilelang/fusion.py",
+    "symbol": "select_fusion",
+    "start": 204,
+    "lines": [
+      "    reference = baseline if reference is None else reference",
+      "    validate_runner(baseline, reference, example_inputs, config=config)",
+      "    try:",
+      "        validate_runner(candidate, reference, example_inputs, config=config)",
+      "    except GraphValidationError as error:",
+      "        return SelectedRunner(baseline, FusionDecision(False, str(error)))"
+    ]
+  },
+  "count": {
+    "file": "../src/torch_tilelang/fusion.py",
+    "symbol": "kernel_count",
+    "start": 49,
+    "lines": [
+      "def kernel_count(mod: tvm.IRModule) -> int:",
+      "    \"\"\"Count actual call sites, rather than unused PrimFunc definitions.\"\"\"",
+      "    count = 0",
+      "",
+      "    def visit(expr):",
+      "        nonlocal count",
+      "        if isinstance(expr, relax.Call) and isinstance(expr.op, tvm.ir.Op) and expr.op.name == \"relax.call_tir\":",
+      "            count += 1",
+      "",
+      "    relax.analysis.post_order_visit(mod[\"main\"].body, visit)",
+      "    return count"
+    ]
+  },
+  "config": {
+    "file": "../src/torch_tilelang/config.py",
+    "symbol": "GraphConfig",
+    "start": 22,
+    "lines": [
+      "    target: str = field(default_factory=lambda: os.environ.get(\"TILELANG_DEFAULT_TARGET\", DEFAULT_ASCEND_TARGET))",
+      "    execution_backend: str = \"auto\"",
+      "    tile_size: int = 1024",
+      "    num_cores: int = 32",
+      "    threads: int = 128",
+      "    vector_width: int = 0",
+      "    fusion: str = \"off\"",
+      "    min_speedup: float = 0.05",
+      "    max_regression: float = 0.02",
+      "    benchmark_repeats: int = 3",
+      "    benchmark_backend: str = \"event\"",
+      "    strict: bool = False"
+    ]
+  },
+  "schedule": {
+    "file": "../src/torch_tilelang/schedules/ascend/schedule.py",
+    "symbol": "schedule_primfunc",
+    "start": 16,
+    "lines": [
+      "    try:",
+      "        return schedule_elementwise(func, config)",
+      "    except ElementwiseScheduleError as error:",
+      "        elementwise_error = error",
+      "",
+      "    from .operators import try_schedule_gemm, try_schedule_reduction",
+      "",
+      "    for schedule in (try_schedule_reduction, try_schedule_gemm):",
+      "        try:",
+      "            scheduled = schedule(func, config)",
+      "        except ValueError:",
+      "            continue",
+      "        if scheduled is not None:",
+      "            return scheduled",
+      "    raise UnsupportedScheduleError(f\"No Ascend graph schedule applies: {elementwise_error}\") from elementwise_error"
+    ]
+  },
+  "compile": {
+    "file": "../src/torch_tilelang/compat/tilelang.py",
+    "symbol": "compile_kernel",
+    "start": 55,
+    "lines": [
+      "def compile_kernel(func, config: GraphConfig):",
+      "    \"\"\"Compile a scheduled PrimFunc with caller-owned output buffers.\"\"\"",
+      "    return tilelang.compile(func, target=config.target, execution_backend=config.execution_backend, out_idx=[])"
+    ]
+  },
+  "elementwise": {
+    "file": "../src/torch_tilelang/schedules/ascend/elementwise.py",
+    "symbol": "schedule_elementwise",
+    "start": 447,
+    "lines": [
+      "    tile_size = int(getattr(config, \"tile_size\", 1024))",
+      "    threads = int(getattr(config, \"threads\", 128))",
+      "    num_cores = int(getattr(config, \"num_cores\", 32))",
+      "    if min(tile_size, threads, num_cores) \u003c= 0 or threads > 1024:",
+      "        raise ElementwiseScheduleError(\"Positive tile_size/num_cores and 1..1024 threads are required\")",
+      "    vector_width = _vector_width(expression, coordinates, shape, tile_size, threads, config)",
+      "    size = math.prod(shape)",
+      "    num_tiles = (size + tile_size - 1) // tile_size",
+      "    grid = min(num_cores, num_tiles)"
+    ]
+  },
+  "operators": {
+    "file": "../src/torch_tilelang/schedules/ascend/operators.py",
+    "symbol": "try_schedule_reduction",
+    "start": 207,
+    "lines": [
+      "    source, output = (normalized.buffer_map[param] for param in normalized.params)",
+      "    source_shape, output_shape = _shape(source), _shape(output)",
+      "    if not source_shape or output_shape is None:",
+      "        return None",
+      "    extent = source_shape[-1]",
+      "    if extent > 16384:",
+      "        return None",
+      "    rows = math.prod(source_shape[:-1])",
+      "    if output_shape not in (source_shape[:-1], (*source_shape[:-1], 1)):",
+      "        return None"
+    ]
+  },
+  "measure": {
+    "file": "../src/torch_tilelang/compat/profiler.py",
+    "symbol": "measure",
+    "start": 23,
+    "lines": [
+      "    try:",
+      "        return do_bench(",
+      "            lambda: runner(*inputs),",
+      "            device=device,",
+      "            backend=backend,",
+      "            warmup=10,",
+      "            rep=30,",
+      "            early_stop_baseline=None,",
+      "            return_mode=\"median\",",
+      "        )",
+      "    except _UNAVAILABLE_ERRORS as error:",
+      "        raise MeasurementUnavailableError(str(error)) from error"
+    ]
+  },
+  "error": {
+    "file": "../src/torch_tilelang/errors.py",
+    "symbol": "MeasurementUnavailableError",
+    "start": 4,
+    "lines": [
+      "class MeasurementUnavailableError(RuntimeError):",
+      "    \"\"\"Profiling produced no usable measurements; device failures are separate.\"\"\""
+    ]
+  },
+  "example": {
+    "file": "../examples/ascend/test_torch_compile.py",
+    "symbol": "test_torch_compile",
+    "start": 21,
+    "lines": [
+      "def test_torch_compile(device, dtype, seed, options):",
+      "    torch.manual_seed(seed)",
+      "    x = torch.randn(7, 65, device=device, dtype=dtype)",
+      "    bias = torch.randn(65, device=device, dtype=dtype)",
+      "    compiled = torch.compile(model, backend=\"tilelang\", fullgraph=True, options=options)",
+      "    torch.testing.assert_close(compiled(x, bias), model(x, bias))"
+    ]
+  },
+  "test": {
+    "file": "../tests/ascend/test_backend.py",
+    "symbol": "test_torch_compile_uses_ascend_kernels",
+    "start": 78,
+    "lines": [
+      "    actual = compiled(x, bias)",
+      "    torch.testing.assert_close(actual, _model(x, bias))",
+      "    assert reports and reports[-1].partitions",
+      "    assert all(partition.compiled and partition.compiled_calls == 1 for partition in reports[-1].partitions)",
+      "    assert sum(partition.kernel_count for partition in reports[-1].partitions) == 3",
+      "    assert all(partition.fallback_calls == 0 for partition in reports[-1].partitions)",
+      "    assert all(partition.execution_backend == execution_backend for partition in reports[-1].partitions)",
+      "    _assert_kernel_backends(kernels, execution_backend)"
+    ]
+  },
+  "index": {
+    "file": "README.md",
+    "symbol": "文档目录",
+    "start": 5,
+    "lines": [
+      "| 文档 | 说明 |",
+      "| --- | --- |",
+      "| [项目架构导览（HTML）](architecture.zh.html) | 用浏览器打开，查看项目全景、编译流程和模块依赖，跟读 Ascend 推理示例 |",
+      "| [安装手册](install.zh.md) | 环境前置条件、editable/wheel 安装、入口验证与常见问题（含 InvalidBackend 排障） |",
+      "| [Ascend 后端编译流程走读](ascend-walkthrough.zh.md) | 以 `examples/ascend/test_torch_compile.py` 为例，说明 FX 捕获、分区、编译、执行全流程 |"
+    ]
+  },
+  "install": {
+    "file": "install.zh.md",
+    "symbol": "安装并验证后端注册 · 验证命令",
+    "start": 118,
+    "lines": [
+      "python - \u003c\u003c'PY'",
+      "import importlib.metadata as md",
+      "from torch._dynamo.backends.registry import lookup_backend",
+      "",
+      "print(\"dist:\", md.version(\"torch-tilelang\"))",
+      "print(\"entry points:\", [(e.name, e.value) for e in md.entry_points(group=\"torch_dynamo_backends\")])",
+      "print(\"backend:\", lookup_backend(\"tilelang\"))",
+      "print(\"alias:\", lookup_backend(\"torch_tilelang_ascend\"))",
+      "PY"
+    ]
+  },
+  "walkthrough": {
+    "file": "ascend-walkthrough.zh.md",
+    "symbol": "Dynamo 后端入口注册",
+    "start": 129,
+    "lines": [
+      "[project.entry-points.\"torch_dynamo_backends\"]",
+      "tilelang = \"torch_tilelang.backend:tilelang_backend\"",
+      "torch_tilelang_ascend = \"torch_tilelang.backend:tilelang_backend\""
+    ]
+  }
+}
+</script>
+<script>
+  (() => {
+    const excerpts = JSON.parse(document.getElementById('preview-excerpts').textContent);
+    const panel = document.getElementById('source-preview');
+    const closeButton = document.getElementById('preview-close');
+    const fullFile = document.getElementById('preview-file');
+    const narrow = window.matchMedia('(max-width: 600px)');
+    let trigger = null;
+    let closeTimer;
+
+    function dismiss(restoreFocus = false) {
+      clearTimeout(closeTimer);
+      if (!trigger) return;
+      if (restoreFocus) trigger.focus({ preventScroll: true });
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger = null;
+      panel.hidden = true;
+    }
+
+    function placePanel() {
+      if (!trigger) return;
+      const anchor = trigger.getBoundingClientRect();
+      const width = document.documentElement.clientWidth;
+      const height = document.documentElement.clientHeight;
+      if (!anchor.width || anchor.bottom <= 0 || anchor.top >= height) {
+        dismiss();
+        return;
+      }
+      if (narrow.matches) {
+        panel.style.removeProperty('left');
+        panel.style.removeProperty('top');
+        return;
+      }
+      const gap = 6;
+      const margin = 12;
+      const below = height - anchor.bottom;
+      const fitsBelow = below >= panel.offsetHeight + gap + margin;
+      const top = fitsBelow || below > anchor.top
+        ? anchor.bottom + gap : anchor.top - panel.offsetHeight - gap;
+      panel.style.left = Math.max(margin, Math.min(anchor.left, width - panel.offsetWidth - margin)) + 'px';
+      panel.style.top = Math.max(margin, Math.min(top, height - panel.offsetHeight - margin)) + 'px';
+    }
+
+    function show(link) {
+      clearTimeout(closeTimer);
+      if (trigger === link) return;
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      trigger = link;
+      const excerpt = excerpts[link.dataset.preview];
+      document.getElementById('preview-symbol').textContent = excerpt.symbol;
+      document.getElementById('preview-path').textContent = excerpt.file.startsWith('../')
+        ? excerpt.file.slice(3) : 'docs/' + excerpt.file;
+      document.getElementById('preview-code').textContent = excerpt.lines.join('\n');
+      document.getElementById('preview-numbers').textContent = excerpt.lines.map((_, i) => excerpt.start + i).join('\n');
+      document.getElementById('preview-range').textContent = '第 ' + excerpt.start + '–' + (excerpt.start + excerpt.lines.length - 1) + ' 行';
+      fullFile.href = link.href;
+      link.setAttribute('aria-expanded', 'true');
+      panel.hidden = false;
+      panel.querySelector('.preview-body').scrollTo(0, 0);
+      placePanel();
+    }
+
+    function leave() {
+      // Allow the pointer to cross the small gap between the link and the panel.
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
+        if (document.activeElement !== trigger && !panel.contains(document.activeElement)) dismiss();
+      }, 260);
+    }
+
+    for (const link of document.querySelectorAll('a[data-preview]')) {
+      link.setAttribute('aria-haspopup', 'dialog');
+      link.setAttribute('aria-controls', panel.id);
+      link.setAttribute('aria-expanded', 'false');
+      link.addEventListener('pointerenter', event => {
+        if (event.pointerType !== 'touch') show(link);
+      });
+      link.addEventListener('pointerleave', leave);
+      link.addEventListener('focus', () => show(link));
+      link.addEventListener('click', event => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        show(link);
+        panel.focus({ preventScroll: true });
+      });
+    }
+
+    panel.addEventListener('pointerenter', () => clearTimeout(closeTimer));
+    panel.addEventListener('pointerleave', leave);
+    closeButton.addEventListener('click', () => dismiss(true));
+    function dismissOutside(event) {
+      if (trigger && !trigger.contains(event.target) && !panel.contains(event.target)) dismiss();
+    }
+    document.addEventListener('pointerdown', dismissOutside);
+    document.addEventListener('focusin', dismissOutside);
+    document.addEventListener('keydown', event => {
+      if (trigger && event.key === 'Escape') {
+        event.preventDefault();
+        dismiss(panel.contains(document.activeElement));
+      }
+      // Continue the page's normal tab order from the invoking link.
+      if (trigger && event.key === 'Tab' && (
+        (!event.shiftKey && event.target === fullFile) ||
+        (event.shiftKey && (event.target === closeButton || event.target === panel))
+      )) dismiss(true);
+    });
+    window.addEventListener('scroll', placePanel, { passive: true });
+    window.addEventListener('resize', placePanel);
+    window.addEventListener('hashchange', () => dismiss());
+  })();
 </script>
 </body>
 </html>
