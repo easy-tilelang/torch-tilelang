@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="用交互图解读懂 torch-tilelang 的架构、Ascend 编译流程、模块依赖和推理示例。">
+<title>torch-tilelang · 项目架构图解</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23212729'/%3E%3Cpath d='m5 16 15-8 15 8-15 8z' fill='%23ff8753'/%3E%3Cpath d='m5 22 15 8 15-8M5 27l15 8 15-8' fill='none' stroke='%23ff8753' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --ink: #1a2327; --secondary: #505d63; --dim: #68757a; --line: #d8dddd;
+  --paper: #fafbf9; --panel: #fff; --hot: #ec6835; --orange-text: #b5481d;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --sans: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body { margin: 0; color: var(--ink); background: var(--paper); font: 1rem/1.65 var(--sans); }
+h1,h2,h3,p,figure,dl,dd { margin: 0; }
+button { font: inherit; cursor: pointer; }
+button,a { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; text-underline-offset: .24em; }
+code,pre { font-family: var(--mono); }
+:focus-visible { outline: 3px solid #007d99; outline-offset: 3px; }
+.skip { position: absolute; top: -5rem; left: 1rem; z-index: 20; padding: .5rem 1rem; background: white; }
+.skip:focus { top: 1rem; }
+.wrap { max-width: 1264px; width: calc(100% - clamp(32px, 10vw, 144px)); margin-inline: auto; }
+.site-header { position: sticky; top: 0; z-index: 9; background: #fafbf9f5; border-bottom: 1px solid var(--line); }
+.header-inner { display: flex; min-height: 68px; align-items: center; gap: clamp(1.2rem,3.6vw,4rem); }
+.brand { display: flex; align-items: center; gap: .65rem; text-decoration: none; flex-shrink: 0; font-size: 1.23rem; font-weight: 730; letter-spacing: -.045em; }
+.brand svg { width: 35px; height: 35px; }
+.site-nav { display: flex; align-self: stretch; align-items: stretch; gap: clamp(16px,2.5vw,38px); }
+.site-nav a { display: flex; align-items: center; position: relative; font-size: .94rem; color: var(--secondary); white-space: nowrap; text-decoration: none; }
+.site-nav a:hover,.site-nav a[aria-current] { color: var(--ink); }
+.site-nav a[aria-current]::after { content: ""; position: absolute; bottom: 0; height: 3px; border-radius: 2px; background: var(--hot); width: 100%; }
+.repo-link { display: inline-flex; align-items: center; gap: .5rem; margin-left: auto; font-size: .9rem; text-decoration: none; white-space: nowrap; }
+.repo-link:hover,.source-link:hover { color: var(--orange-text); }
+.repo-link svg { width: 20px; height: 20px; }
+#overview { padding-top: clamp(34px,4.3vw,66px); }
+.crumb { display: flex; gap: .65rem; align-items: center; font-size: .88rem; color: var(--secondary); }
+.crumb code { font-size: .89rem; }
+.crumb i { color: #9aa2a4; font-style: normal; }
+.hero-title { font-size: clamp(2.6rem,4.45vw,4.3rem); line-height: 1.2; font-weight: 720; letter-spacing: -.053em; margin: .6rem 0 .63rem; }
+.hero-title span { color: #bd4e21; white-space: nowrap; }
+.intro { font-size: clamp(1rem,1.3vw,1.15rem); line-height: 1.75; color: var(--secondary); }
+.overview-board { margin-top: clamp(22px,2.2vw,34px); border: 1px solid #252a2d; border-radius: 16px; overflow: hidden; color: #f3f4f1; background: #1a1f22; box-shadow: 0 5px 14px #17212713; }
+.board-canvas { background-color: #1a1f22; background-image: radial-gradient(ellipse at 50% 65%, #ec753211, transparent 45%), linear-gradient(#77848812 1px, transparent 1px),linear-gradient(90deg,#77848812 1px, transparent 1px); background-size: auto,24px 24px,24px 24px; }
+.board-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 22px clamp(16px,2.5vw,35px) 0; }
+.board-head h2 { display: flex; align-items: center; gap: .65rem; line-height: 1.25; font-weight: 600; font-size: 1.2rem; }
+.board-head svg { width: 20px; height: 20px; color: #ff9869; }
+.route-switch { display: flex; padding: 3px; background: #121618; border: 1px solid #41484b; border-radius: 7px; }
+.route-switch button { padding: .34rem .85rem; min-height: 32px; border: 0; color: #c7d0d1; background: transparent; border-radius: 4px; font: 600 .89rem/1.25 var(--mono); }
+.route-switch button[aria-pressed=true] { background: #ff925f; color: #212321; }
+.route-switch button:hover:not([aria-pressed=true]) { background: #31383b; }
+.drawing { position: relative; padding: 0 3.5%; }
+#overview-figure { display: block; width: 100%; height: auto; margin: auto; max-width: 1060px; }
+.mobile-map { display: none; }
+.route-details { display: flex; flex-wrap: wrap; gap: .5rem clamp(18px,3vw,48px); align-items: center; padding: 14px clamp(16px,2.5vw,35px); background: #12181b; border-top: 1px solid #394145; font-size: .9rem; }
+.route-details div { display: flex; align-items: baseline; gap: .6rem; }
+.route-details dt { color: #a1afb2; }
+.route-details dd { color: #f1f2ea; font-family: var(--mono); font-size: .89rem; overflow-wrap: anywhere; }
+.route-details dd.route-value { color: #ffab83; }
+.section { padding-top: clamp(52px,5.4vw,80px); }
+.section-head { margin-bottom: 22px; }
+.section-head h2 { font-size: clamp(1.8rem,2.65vw,2.48rem); line-height: 1.3; letter-spacing: -.045em; font-weight: 710; }
+.section-head p { margin-top: 7px; color: var(--secondary); }
+.section-head code,.walk-info code { font-size: .94em; }
+.walkthrough { display:grid; grid-template-columns: minmax(0,1.22fr) minmax(0,.9fr); gap: clamp(23px,3vw,43px); align-items: start; }
+.code-panel { background: #1a2023; color: #f2f4ee; border-radius: 12px; border:1px solid #333b3f; overflow:hidden; }
+.code-head { padding: 13px 18px; border-bottom:1px solid #3a4448; display:flex; align-items:center; justify-content:space-between; color:#cbd3d4; font: .89rem var(--mono); gap:1rem; }
+.copy-btn { font: .88rem var(--sans); padding: .22rem .65rem; color:#edf1ec; border:1px solid #536064; border-radius:4px; background:transparent; }
+.copy-btn:hover { background:#31393c; }
+.code-panel pre { margin:0; padding:18px; overflow:auto; font-size:.88rem; line-height:1.7; tab-size:4; }
+.kw { color:#ffb189; } .str { color:#abd2ae; } .fn { color: #c1d7ee; }
+.walk-info h3 { font-size:1.13rem; margin:0 0 .45rem; }
+.walk-info p { color:var(--secondary); }
+.support-list { margin: .9rem 0 1.2rem; border-top:1px solid var(--line); }
+.support-list div { display:grid; grid-template-columns: 5rem 1fr; gap:.85rem; border-bottom:1px solid var(--line); padding:.63rem 0; }
+.support-list dt { font-weight:620; } .support-list dd { color:var(--secondary); }
+.source-links { display:flex; flex-wrap:wrap; gap:.45rem 1.1rem; }
+.source-link { color:var(--orange-text); }
+.footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.8rem; border-top:1px solid var(--line); margin-top:64px; padding:22px 0 30px; color:var(--secondary); font-size:.9rem; }
+.footer .wordmark { font-family:var(--mono); font-weight:600; color:var(--ink); }
+.footer a { color:var(--secondary); }
+@media (max-width:850px) { .walkthrough { grid-template-columns:1fr; } .route-details { column-gap:20px; } .route-details dt,.route-details dd { font-size:.85rem; } }
+@media (max-width:720px) {
+  html { scroll-padding-top: 110px; }
+  .wrap { width: calc(100% - 36px); }
+  .header-inner { min-height:0; flex-wrap:wrap; gap:0; padding-top:10px; }
+  .site-nav { width:100%; order:3; gap:0; justify-content:space-between; }
+  .site-nav a { padding: .6rem 0 .53rem; font-size:.9rem; }
+  .brand svg { width:29px; height:29px; }
+  .hero-title { font-size:clamp(2rem,6.05vw,2.7rem); }
+  .board-head { padding-top:14px; }
+  .route-details { display:grid; grid-template-columns:1fr 1fr; gap:.4rem .7rem; }
+  .route-details div:last-child { grid-column:1/-1; }
+}
+@media (max-width:550px) {
+  .board-head h2 { font-size:1.02rem; gap:.45rem; }
+  .route-switch button { padding:.27rem .55rem; }
+  .drawing { padding:0; }
+  /* Crop the same SVG stations into rows so their labels stay legible on a phone. */
+  #overview-figure { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; }
+  .mobile-map { display:grid; gap:0; list-style:none; margin:.8rem 0 .65rem; padding:0 16px; }
+  .mobile-map li { display:grid; grid-template-columns: 83px 1fr; align-items:center; gap:.65rem; min-height:79px; position:relative; }
+  .mobile-map li+li::before { content:""; height:13px; width:1px; background:#a68068; position:absolute; left:41px; top:-7px; }
+  .mobile-map svg { width:83px; height:75px; } .mobile-map strong { display:block; font:600 1rem var(--mono); }
+  .mobile-map small { color:#c1cacc; font: .88rem var(--sans); }
+  .section { padding-top:43px; } .section-head { margin-bottom:15px; }
+  .footer { margin-top:43px; }
+}
+@media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+
+.flow-widget{color:#1a2327;background:#fff;border:1px solid #d6dbdb;border-radius:12px;overflow:hidden;font-size:1rem;line-height:1.55}
+.flow-widget *,.flow-widget *::before,.flow-widget *::after{box-sizing:border-box}
+.flow-widget [hidden]{display:none!important}
+.flow-switch{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:#f8f9f8;padding:13px 20px;border-bottom:1px solid #dce1df}
+.flow-switch button{font:inherit;font-size:.9375rem;font-weight:600;line-height:1.4;padding:8px 15px;border:1px solid transparent;cursor:pointer;border-radius:6px;background:transparent;color:#475559}
+.flow-switch button:hover{background:#edeFED;color:#1a2327}
+.flow-switch button[aria-selected="true"]{background:#fff;color:#a13c16;border-color:#d9ccbf;box-shadow:0 1px 2px #2327270a}
+.flow-widget :focus-visible{outline:2px solid #a13c16;outline-offset:3px}
+.flow-pane{padding:30px 28px 0}
+.flow-steps{--flow-count:4;display:grid;grid-template-columns:repeat(var(--flow-count),minmax(0,1fr));gap:24px;margin:0;padding:0;list-style:none}
+.flow-steps.flow-three{--flow-count:3}
+.flow-step{min-width:0;position:relative;padding-top:31px}
+.flow-step::before{content:"";position:absolute;left:0;top:3px;width:13px;height:13px;background:#fff;border:3px solid #b4c1c3;border-radius:50%}
+.flow-step:first-child::before{border-color:#ed6534}
+.flow-step:last-child::before{border-color:#29363b;background:#29363b}
+.flow-step:not(:last-child)::after{position:absolute;content:"";height:9px;left:20px;top:5px;right:-18px;background:#a8b5b9;clip-path:polygon(0 42%,calc(100% - 6px) 42%,calc(100% - 6px) 0,100% 50%,calc(100% - 6px) 100%,calc(100% - 6px) 58%,0 58%)}
+.flow-step h3,.flow-errors strong{font-size:1.0625rem;line-height:1.48;font-weight:680;color:#1a2327;letter-spacing:.005em}
+.flow-step h3{margin:0 0 8px}
+.flow-step p,.flow-errors p{margin:0;color:#48565b;font-size:1rem;line-height:1.65}
+.flow-widget code{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;font-size:.9em;color:inherit;overflow-wrap:anywhere}
+.flow-outcome{margin:24px 0 0;padding:14px 16px;background:#f6f7f5;border-left:3px solid #ed6534;border-radius:0 5px 5px 0;color:#354449}
+.flow-path{display:flex;align-items:baseline;gap:10px}
+.flow-path+.flow-path{margin-top:6px}
+.flow-when{color:#9e3b18;font-size:.875rem;font-weight:640;white-space:nowrap;flex:0 0 auto}
+.flow-label{font-size:1.05rem;font-weight:670;margin:0 0 12px}
+.flow-errors{margin:0;padding:0 0 0 18px;list-style:none}
+.flow-errors li{position:relative;padding:0 0 13px 20px;border-left:1px solid #bac5c4}
+.flow-errors li:last-child{border-color:transparent}
+.flow-errors li::before{position:absolute;left:-1px;top:0;content:"";width:13px;height:13px;border-left:1px solid #bac5c4;border-bottom:1px solid #bac5c4}
+.flow-errors li::after{content:"";position:absolute;left:9px;top:9px;width:6px;height:6px;border-right:1px solid #768582;border-top:1px solid #768582;transform:rotate(45deg)}
+.flow-errors strong{margin-right:10px}
+.flow-errors p{display:inline}
+.flow-sources{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;border-top:1px solid #e1e5e4;padding:13px 0;margin:22px 0 0;font-size:.875rem;color:#576469}
+.flow-sources a{color:#334c52;text-decoration:underline;text-decoration-color:#a5b4b7;text-underline-offset:3px;overflow-wrap:anywhere}
+.flow-sources a:hover{color:#9e3b18;text-decoration-color:currentColor}
+@media(max-width:760px){
+ .flow-pane{padding:21px 17px 0}
+ .flow-switch{padding:10px;gap:1px}
+ .flow-switch button{padding:7px 10px}
+ .flow-steps,.flow-steps.flow-three{display:block}
+ .flow-step{padding:0 0 19px 26px}
+ .flow-step:last-child{padding-bottom:0}
+ .flow-step h3{margin-bottom:3px}
+ .flow-step::before{top:6px}
+ .flow-step:not(:last-child)::after{left:3px;top:23px;bottom:0;right:auto;width:7px;height:auto;clip-path:polygon(42% 0,58% 0,58% calc(100% - 5px),100% calc(100% - 5px),50% 100%,0 calc(100% - 5px),42% calc(100% - 5px))}
+ .flow-outcome{padding:10px 12px;margin-top:18px}
+ .flow-path{display:block}
+ .flow-when{margin-right:8px}
+ .flow-errors{padding-left:2px}
+ .flow-errors strong{display:block}
+}
+@media print{.flow-switch{display:none}.flow-widget [role="tabpanel"][hidden]{display:block!important}.flow-pane{break-inside:avoid}}
+
+
+.dep-explorer{--dep-ink:#1a2327;--dep-line:#d6dcdd;--dep-muted:#52626a;--dep-active:#ba4921;border:1px solid var(--dep-line);border-radius:12px;background:white;color:var(--dep-ink);overflow:hidden;display:grid;grid-template-columns:minmax(0,1.95fr) minmax(245px,1fr)}
+.dep-explorer *{box-sizing:border-box}
+.dep-figure{margin:0;min-width:0;align-self:start;container-type:inline-size}
+.dep-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:20px clamp(16px,2vw,26px) 0;font:500 .875rem/1.4 "IBM Plex Mono",ui-monospace,monospace;color:var(--dep-muted)}
+.dep-toolbar span:first-child{display:flex;align-items:center;gap:10px}
+.dep-stage{height:300px;position:relative;margin:12px 0;background-image:radial-gradient(#dde2e1 1px,transparent 1px);background-size:14px 14px}
+.dep-stage svg{position:absolute;inset:0;height:100%;width:100%;pointer-events:none}
+.dep-wire{fill:none;stroke:#c8d0d1;stroke-width:1.25;stroke-linejoin:round;vector-effect:non-scaling-stroke;marker-end:url(#dep-arrow)}
+.dep-wire.dep-on{stroke:#cd6036;stroke-width:1.8;marker-end:url(#dep-arrow-on)}
+.dep-node{position:absolute;left:var(--dep-x);top:var(--dep-y);transform:translate(-50%,-50%);width:22.8%;height:16.25%;background:#fff;border:1px solid #c8d0d1;border-radius:6px;cursor:pointer;padding:3px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;font:inherit;color:var(--dep-ink)}
+.dep-node code,.dep-mobile-target,.dep-detail code,.dep-picker{font:600 .9375rem/1.25 "IBM Plex Mono",ui-monospace,monospace}
+.dep-node small{font-family:inherit;font-weight:500;font-size:.8125rem;line-height:1.3;color:var(--dep-muted)}
+.dep-node.dep-target{border-color:#ce927d;background:#fff8f4}
+.dep-node[aria-pressed="true"]{background:#233139;border-color:#233139;color:white;box-shadow:inset 3px 0 #ed794b}
+.dep-node[aria-pressed="true"] small{color:#dbe3e5}
+.dep-node:hover,.dep-mobile-target:hover{border-color:#b84c26}
+.dep-explorer :is(button,a,select):focus-visible{outline:3px solid #b64d21;outline-offset:3px}
+.dep-caption{display:flex;align-items:center;gap:10px;margin:0;padding:0 clamp(16px,2vw,26px) 18px;font-size:.875rem;line-height:1.6;color:var(--dep-muted)}
+.dep-key{display:inline-block;width:27px;height:1.5px;flex:none;background:#c65b31;position:relative}
+.dep-key:after{content:"";position:absolute;right:0;top:-3px;border-left:6px solid #c65b31;border-block:4px solid transparent}
+.dep-detail{border-left:1px solid var(--dep-line);background:#f8f9f8;padding:24px clamp(17px,2.1vw,30px);display:flex;align-items:flex-start;flex-direction:column;gap:13px;overflow-wrap:anywhere}
+.dep-detail h3,.dep-detail p,.dep-detail ul{margin:0}
+.dep-detail h3{font:650 1.4rem/1.3 "IBM Plex Mono",ui-monospace,monospace;color:var(--dep-ink)}
+.dep-detail p{font-size:1rem;line-height:1.7}
+.dep-detail .dep-sub{font-size:.8125rem;color:var(--dep-muted);font-weight:600}
+.dep-detail .dep-imports{list-style:none;display:flex;flex-wrap:wrap;gap:5px 6px;padding:0}
+.dep-imports li{border:1px solid #d4dcdc;color:#3c5157;background:white;border-radius:3px;padding:3px 7px;line-height:1.25}
+.dep-imports code{font-size:.8125rem;font-weight:500}
+.dep-detail .dep-source{display:inline-flex;align-items:center;gap:8px;margin-top:4px;font-size:.875rem;font-weight:600;color:var(--dep-active);text-decoration:underline;text-underline-offset:3px}
+.dep-mobile{display:none}
+@media(max-width:900px){.dep-explorer{grid-template-columns:1fr}.dep-detail{border-left:0;border-top:1px solid var(--dep-line)}}
+@container(max-width:510px){
+ .dep-stage{display:none}
+ .dep-mobile{display:block;margin:16px 16px 18px}
+ .dep-picker{max-width:100%;border:1px solid #d6dcdd;border-radius:4px;background:#233139;color:white;padding:10px 30px 10px 12px}
+ .dep-picker-label{display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:var(--dep-muted);font-size:.9375rem;margin-bottom:10px}
+ .dep-branches{padding:1px 0 1px 20px;margin:0;list-style:none}
+ .dep-branches li{position:relative;padding:3px 0 3px 23px;border-left:1.5px solid #ce825f}
+ .dep-branches li:last-child{border-color:transparent}
+ .dep-branches li:last-child:before{content:"";position:absolute;background:#ce825f;top:0;left:-1.5px;bottom:50%;width:1.5px}
+ .dep-branches li:after{content:"";position:absolute;top:50%;left:0;width:17px;height:1.5px;background:#ce825f}
+ .dep-mobile-target{display:inline-block;padding:7px 10px;border:1px solid #d8997e;border-radius:4px;background:#fff8f4;color:var(--dep-ink);cursor:pointer;max-width:100%;overflow-wrap:anywhere;white-space:normal}
+ .dep-mobile-target:before{content:"";position:absolute;left:14px;top:calc(50% - 3px);border-left:6px solid #ce825f;border-block:4px solid transparent}
+ .dep-mobile-empty{font-size:.9375rem;color:var(--dep-muted);margin:14px 0}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="site-header"><div class="wrap header-inner">
+  <a href="#overview" class="brand" aria-label="torch-tilelang 项目全景">
+    <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="9" fill="#22292b"/><path d="m6 15.5 14-7.5 14 7.5L20 23z" fill="#ff9365"/><path d="m6 21 14 7 14-7M6 26l14 7 14-7" stroke="#ff9365" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
+    torch-tilelang
+  </a>
+  <nav class="site-nav" aria-label="页内导航"><a href="#overview" aria-current="location">项目全景</a><a href="#flow">编译流程</a><a href="#modules">模块依赖</a><a href="#example">运行示例</a></nav>
+  <a class="repo-link" href="https://github.com/easy-tilelang/torch-tilelang"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .9a11.1 11.1 0 0 0-3.51 21.63c.55.1.76-.24.76-.54v-2.08c-3.09.67-3.74-1.31-3.74-1.31-.5-1.28-1.23-1.62-1.23-1.62-1.01-.7.08-.69.08-.69 1.12.08 1.71 1.14 1.71 1.14.99 1.7 2.6 1.21 3.23.92.1-.72.39-1.21.7-1.49-2.46-.28-5.05-1.23-5.05-5.49 0-1.21.43-2.2 1.14-2.98-.11-.28-.49-1.41.11-2.94 0 0 .93-.3 3.05 1.14a10.65 10.65 0 0 1 5.56 0c2.11-1.44 3.04-1.14 3.04-1.14.61 1.53.23 2.66.12 2.94.71.78 1.14 1.77 1.14 2.98 0 4.27-2.6 5.21-5.08 5.49.4.35.75 1.02.75 2.06v3.07c0 .3.2.65.77.54A11.1 11.1 0 0 0 12 .9Z"/></svg>源码仓库</a>
+</div></header>
+<main id="main" class="wrap">
+  <section id="overview" aria-labelledby="page-title">
+    <p class="crumb"><code>easy-tilelang</code><i aria-hidden="true">/</i>项目架构指南</p>
+    <h1 class="hero-title" id="page-title">从 PyTorch 到 <span>Ascend NPU</span></h1>
+    <p class="intro">torch-tilelang 将 PyTorch 推理图中受支持的分区编译为 TileLang 内核，在昇腾 NPU 上执行。</p>
+    <figure class="overview-board" aria-labelledby="board-title">
+      <div class="board-canvas"><div class="board-head"><h2 id="board-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round" aria-hidden="true"><path d="m12 2.7 8.5 4.9-8.5 4.9-8.5-4.9zM3.5 12l8.5 4.9 8.5-4.9M3.5 16.4l8.5 4.9 8.5-4.9"/></svg>项目全景图</h2>
+        <div class="route-switch" role="group" aria-label="选择编译目标"><button type="button" data-route="ascendc" aria-pressed="true">AscendC</button><button type="button" data-route="pto" aria-pressed="false">PTO</button></div>
+      </div>
+      <div class="drawing">
+<svg id="overview-figure" viewBox="0 0 1060 260" width="100%" role="img" aria-labelledby="overview-svg-title overview-svg-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="overview-svg-title">从 PyTorch 模型到 Ascend NPU 的项目全景图</title>
+<desc id="overview-svg-desc">PyTorch 向 torch-tilelang 提供 FX GraphModule。后端分区、转换并调度计算，使用 TileLang 编译内核，最终在 Ascend NPU 上执行。</desc>
+<g stroke-linejoin="round" stroke-linecap="round">
+<polyline points="245.0,128.0 454.0,128.0" fill="none" stroke="#728086" stroke-width="1.35"/>
+<polyline points="245.0,132.0 265.0,142.0 412.0,142.0 433.0,133.0 454.0,133.0" fill="none" stroke="#424e54" stroke-width="1"/>
+<polyline points="343.5,124.0 349.5,128.0 343.5,132.0" fill="none" stroke="#ff9c71" stroke-width="1.7"/>
+<polyline points="350.5,124.0 356.5,128.0 350.5,132.0" fill="none" stroke="#ff9c71" stroke-width="1.7"/>
+<text x="349.5" y="105" fill="#d1d6d6" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="14" font-weight="500">FX GraphModule</text>
+<polyline points="606.0,128.0 811.0,128.0" fill="none" stroke="#728086" stroke-width="1.35"/>
+<polyline points="606.0,132.0 626.0,142.0 769.0,142.0 790.0,133.0 811.0,133.0" fill="none" stroke="#424e54" stroke-width="1"/>
+<polyline points="702.5,124.0 708.5,128.0 702.5,132.0" fill="none" stroke="#ff9c71" stroke-width="1.7"/>
+<polyline points="709.5,124.0 715.5,128.0 709.5,132.0" fill="none" stroke="#ff9c71" stroke-width="1.7"/>
+<text x="708.5" y="105" fill="#d1d6d6" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="14" font-weight="500">TileLang kernel</text>
+<g id="overview-fx-sheets">
+<polygon points="277.0,151.3 191.0,192.6 191.0,196.6 277.0,155.3" fill="#293037" stroke="#6e797e" stroke-width="1.2"/>
+<polygon points="83.0,140.7 191.0,192.6 191.0,196.6 83.0,144.7" fill="#394247" stroke="#6e797e" stroke-width="1.2"/>
+<polygon points="169.0,99.4 277.0,151.3 191.0,192.6 83.0,140.7" fill="#283036" stroke="#6e797e" stroke-width="1.2"/>
+<polyline points="168.0,105.7 263.0,151.3 191.0,185.8 96.0,140.2 168.0,105.7" fill="none" stroke="#839092" stroke-width="0.82"/>
+<polyline points="97.0,147.9 97.0,150.5" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="103.0,150.8 103.0,153.4" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="109.0,153.7 109.0,156.3" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="115.0,156.6 115.0,159.2" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="121.0,159.5 121.0,162.1" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="127.0,162.3 127.0,164.9" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="133.0,165.2 133.0,167.8" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="139.0,168.1 139.0,170.7" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="145.0,171.0 145.0,173.6" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="151.0,173.9 151.0,176.5" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="157.0,176.7 157.0,179.3" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="163.0,179.6 163.0,182.2" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="169.0,182.5 169.0,185.1" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="175.0,185.4 175.0,188.0" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polygon points="277.0,138.3 191.0,179.6 191.0,183.6 277.0,142.3" fill="#293037" stroke="#839096" stroke-width="1.2"/>
+<polygon points="83.0,127.7 191.0,179.6 191.0,183.6 83.0,131.7" fill="#394247" stroke="#839096" stroke-width="1.2"/>
+<polygon points="169.0,86.4 277.0,138.3 191.0,179.6 83.0,127.7" fill="#343d42" stroke="#839096" stroke-width="1.2"/>
+<polyline points="168.0,92.7 263.0,138.3 191.0,172.8 96.0,127.2 168.0,92.7" fill="none" stroke="#839092" stroke-width="0.82"/>
+<polyline points="97.0,134.9 97.0,137.5" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="103.0,137.8 103.0,140.4" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="109.0,140.7 109.0,143.3" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="115.0,143.6 115.0,146.2" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="121.0,146.5 121.0,149.1" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="127.0,149.3 127.0,151.9" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="133.0,152.2 133.0,154.8" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="139.0,155.1 139.0,157.7" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="145.0,158.0 145.0,160.6" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="151.0,160.9 151.0,163.5" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="157.0,163.7 157.0,166.3" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="163.0,166.6 163.0,169.2" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="169.0,169.5 169.0,172.1" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="175.0,172.4 175.0,175.0" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polygon points="277.0,122.3 191.0,163.6 191.0,167.6 277.0,126.3" fill="#293037" stroke="#a1a9a9" stroke-width="1.2"/>
+<polygon points="83.0,111.7 191.0,163.6 191.0,167.6 83.0,115.7" fill="#394247" stroke="#a1a9a9" stroke-width="1.2"/>
+<polygon points="169.0,70.4 277.0,122.3 191.0,163.6 83.0,111.7" fill="#41494e" stroke="#a1a9a9" stroke-width="1.2"/>
+<polyline points="168.0,76.7 263.0,122.3 191.0,156.8 96.0,111.2 168.0,76.7" fill="none" stroke="#839092" stroke-width="0.82"/>
+<polyline points="97.0,118.9 97.0,121.5" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="103.0,121.8 103.0,124.4" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="109.0,124.7 109.0,127.3" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="115.0,127.6 115.0,130.2" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="121.0,130.5 121.0,133.1" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="127.0,133.3 127.0,135.9" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="133.0,136.2 133.0,138.8" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="139.0,139.1 139.0,141.7" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="145.0,142.0 145.0,144.6" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="151.0,144.9 151.0,147.5" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="157.0,147.7 157.0,150.3" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="163.0,150.6 163.0,153.2" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="169.0,153.5 169.0,156.1" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polyline points="175.0,156.4 175.0,159.0" fill="none" stroke="#a2abaf" stroke-width="0.65"/>
+<polygon points="277.0,105.3 191.0,146.6 191.0,150.6 277.0,109.3" fill="#293037" stroke="#c2c9c7" stroke-width="1.2"/>
+<polygon points="83.0,94.7 191.0,146.6 191.0,150.6 83.0,98.7" fill="#394247" stroke="#c2c9c7" stroke-width="1.2"/>
+<polygon points="169.0,53.4 277.0,105.3 191.0,146.6 83.0,94.7" fill="#4b5255" stroke="#c2c9c7" stroke-width="1.2"/>
+<polyline points="168.0,59.7 263.0,105.3 191.0,139.8 96.0,94.2 168.0,59.7" fill="none" stroke="#839092" stroke-width="0.82"/>
+<polyline points="147.0,85.1 160.0,91.4 177.0,83.2 192.0,90.4" fill="none" stroke="#ffb18c" stroke-width="1.55"/>
+<polyline points="147.0,85.1 160.0,91.4 145.0,98.6 160.0,105.8" fill="none" stroke="#ffb18c" stroke-width="1.55"/>
+<polyline points="200.0,94.2 212.0,100.0 195.0,108.2 209.0,114.9" fill="none" stroke="#ffb18c" stroke-width="1.55"/>
+<polyline points="168.0,109.6 180.0,115.4 195.0,108.2 209.0,114.9" fill="none" stroke="#ffb18c" stroke-width="1.55"/>
+<polygon points="155.0,82.1 147.0,86.0 147.0,88.0 155.0,84.1" fill="#785c51" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="139.0,82.1 147.0,86.0 147.0,88.0 139.0,84.1" fill="#a17561" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="147.0,78.3 155.0,82.1 147.0,86.0 139.0,82.1" fill="#f0d3bc" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="204.0,89.3 196.0,93.2 196.0,95.2 204.0,91.3" fill="#785c51" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="188.0,89.3 196.0,93.2 196.0,95.2 188.0,91.3" fill="#a17561" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="196.0,85.5 204.0,89.3 196.0,93.2 188.0,89.3" fill="#ff976a" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="172.0,104.7 164.0,108.5 164.0,110.5 172.0,106.7" fill="#785c51" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="156.0,104.7 164.0,108.5 164.0,110.5 156.0,106.7" fill="#a17561" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="164.0,100.8 172.0,104.7 164.0,108.5 156.0,104.7" fill="#ff976a" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="220.0,113.3 212.0,117.2 212.0,119.2 220.0,115.3" fill="#785c51" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="204.0,113.3 212.0,117.2 212.0,119.2 204.0,115.3" fill="#a17561" stroke="#edbea0" stroke-width="0.8"/>
+<polygon points="212.0,109.5 220.0,113.3 212.0,117.2 204.0,113.3" fill="#f0d3bc" stroke="#edbea0" stroke-width="0.8"/>
+<polyline points="114.0,90.4 124.0,95.2" fill="none" stroke="#bdc2bd" stroke-width="0.75"/>
+<polyline points="110.0,92.3 121.6,97.9" fill="none" stroke="#bdc2bd" stroke-width="0.75"/>
+<polyline points="106.0,94.2 119.2,100.6" fill="none" stroke="#bdc2bd" stroke-width="0.75"/>
+</g><g id="overview-compiler">
+<polygon points="639.0,150.4 537.0,199.3 537.0,207.3 639.0,158.4" fill="#222629" stroke="#93948c" stroke-width="1.1"/>
+<polygon points="421.0,143.6 537.0,199.3 537.0,207.3 421.0,151.6" fill="#272b2e" stroke="#93948c" stroke-width="1.1"/>
+<polygon points="523.0,94.7 639.0,150.4 537.0,199.3 421.0,143.6" fill="#34383a" stroke="#93948c" stroke-width="1.1"/>
+<polygon points="633.0,141.4 537.0,187.4 537.0,193.4 633.0,147.4" fill="#3c312c" stroke="#bc7a59" stroke-width="1.1"/>
+<polygon points="427.0,134.6 537.0,187.4 537.0,193.4 427.0,140.6" fill="#5a3a2d" stroke="#bc7a59" stroke-width="1.1"/>
+<polygon points="523.0,88.6 633.0,141.4 537.0,187.4 427.0,134.6" fill="#483c36" stroke="#bc7a59" stroke-width="1.1"/>
+<polyline points="445.0,135.6 437.0,139.4" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="437.0,140.4 437.0,143.4" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="451.0,138.5 443.0,142.3" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="443.0,143.3 443.0,146.3" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="457.0,141.4 449.0,145.2" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="449.0,146.2 449.0,149.2" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="463.0,144.2 455.0,148.1" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="455.0,149.1 455.0,152.1" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="469.0,147.1 461.0,151.0" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="461.0,152.0 461.0,155.0" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="475.0,150.0 467.0,153.8" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="467.0,154.8 467.0,157.8" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="481.0,152.9 473.0,156.7" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="473.0,157.7 473.0,160.7" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="487.0,155.8 479.0,159.6" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="479.0,160.6 479.0,163.6" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="493.0,158.6 485.0,162.5" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="485.0,163.5 485.0,166.5" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="499.0,161.5 491.0,165.4" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="491.0,166.4 491.0,169.4" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="505.0,164.4 497.0,168.2" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="497.0,169.2 497.0,172.2" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="511.0,167.3 503.0,171.1" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="503.0,172.1 503.0,175.1" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="517.0,170.2 509.0,174.0" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="509.0,175.0 509.0,178.0" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="523.0,173.0 515.0,176.9" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="515.0,177.9 515.0,180.9" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="529.0,175.9 521.0,179.8" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="521.0,180.8 521.0,183.8" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="535.0,178.8 527.0,182.6" fill="none" stroke="#e49568" stroke-width="0.9"/>
+<polyline points="527.0,183.6 527.0,186.6" fill="none" stroke="#d68560" stroke-width="0.8"/>
+<polyline points="615.0,143.3 622.0,146.6" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="609.0,146.2 616.0,149.5" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="603.0,149.0 610.0,152.4" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="597.0,151.9 604.0,155.3" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="591.0,154.8 598.0,158.2" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="585.0,157.7 592.0,161.0" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="579.0,160.6 586.0,163.9" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="573.0,163.4 580.0,166.8" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="567.0,166.3 574.0,169.7" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="561.0,169.2 568.0,172.6" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="555.0,172.1 562.0,175.4" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="549.0,175.0 556.0,178.3" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="543.0,177.8 550.0,181.2" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polyline points="537.0,180.7 544.0,184.1" fill="none" stroke="#d28a62" stroke-width="0.8"/>
+<polygon points="621.0,130.4 537.0,170.7 537.0,176.7 621.0,136.4" fill="#41302b" stroke="#fc9c6e" stroke-width="1.2"/>
+<polygon points="439.0,123.6 537.0,170.7 537.0,176.7 439.0,129.6" fill="#583d31" stroke="#fc9c6e" stroke-width="1.2"/>
+<polygon points="523.0,83.3 621.0,130.4 537.0,170.7 439.0,123.6" fill="#4d3d36" stroke="#fc9c6e" stroke-width="1.2"/>
+<polyline points="523.0,87.2 447.0,123.6" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="530.0,90.5 454.0,127.0" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="537.0,93.9 461.0,130.4" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="544.0,97.2 468.0,133.7" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="551.0,100.6 475.0,137.1" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="558.0,104.0 482.0,140.4" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="565.0,107.3 489.0,143.8" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="572.0,110.7 496.0,147.2" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="579.0,114.0 503.0,150.5" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="586.0,117.4 510.0,153.9" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="593.0,120.8 517.0,157.2" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="600.0,124.1 524.0,160.6" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="607.0,127.5 531.0,164.0" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="523.0,87.2 613.0,130.4" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="516.0,90.5 606.0,133.7" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="509.0,93.9 599.0,137.1" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="502.0,97.2 592.0,140.4" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="495.0,100.6 585.0,143.8" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="488.0,104.0 578.0,147.2" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="481.0,107.3 571.0,150.5" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="474.0,110.7 564.0,153.9" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="467.0,114.0 557.0,157.2" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="460.0,117.4 550.0,160.6" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polyline points="453.0,120.8 543.0,164.0" fill="none" stroke="#795745" stroke-width="0.6"/>
+<polygon points="523.0,87.4 526.4,89.1 523.0,90.7 519.6,89.1" fill="#edaa83" stroke="none" stroke-width="1"/>
+<polygon points="609.0,128.7 612.4,130.4 609.0,132.0 605.6,130.4" fill="#edaa83" stroke="none" stroke-width="1"/>
+<polygon points="537.0,163.3 540.4,164.9 537.0,166.6 533.6,164.9" fill="#edaa83" stroke="none" stroke-width="1"/>
+<polygon points="451.0,122.0 454.4,123.6 451.0,125.3 447.6,123.6" fill="#edaa83" stroke="none" stroke-width="1"/>
+<polyline points="456.0,128.0 462.0,125.1 478.0,125.1" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="603.0,134.2 598.0,131.8 584.0,131.8" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="463.0,131.3 469.0,128.4 485.0,128.4" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="595.0,138.0 590.0,135.6 576.0,135.6" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="470.0,134.7 476.0,131.8 492.0,131.8" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="587.0,141.9 582.0,139.5 568.0,139.5" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="477.0,138.0 483.0,135.2 499.0,135.2" fill="none" stroke="#e69468" stroke-width="1"/>
+<polyline points="579.0,145.7 574.0,143.3 560.0,143.3" fill="none" stroke="#e69468" stroke-width="1"/>
+<polygon points="601.0,111.4 533.0,144.1 533.0,152.1 601.0,119.4" fill="#4c362d" stroke="#fa9c6e" stroke-width="1.1"/>
+<polygon points="459.0,108.6 533.0,144.1 533.0,152.1 459.0,116.6" fill="#694632" stroke="#fa9c6e" stroke-width="1.1"/>
+<polygon points="527.0,75.9 601.0,111.4 533.0,144.1 459.0,108.6" fill="#755141" stroke="#fa9c6e" stroke-width="1.1"/>
+<polygon points="586.0,99.0 532.0,124.9 532.0,130.9 586.0,105.0" fill="#6b4230" stroke="#ffa071" stroke-width="1.2"/>
+<polygon points="474.0,97.0 532.0,124.9 532.0,130.9 474.0,103.0" fill="#8d4d32" stroke="#ffa071" stroke-width="1.2"/>
+<polygon points="528.0,71.1 586.0,99.0 532.0,124.9 474.0,97.0" fill="#a35c3c" stroke="#ffa071" stroke-width="1.2"/>
+<polygon points="551.0,76.0 531.0,85.6 531.0,93.6 551.0,84.0" fill="#985438" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="508.0,74.5 531.0,85.6 531.0,93.6 508.0,82.5" fill="#b86038" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="528.0,64.9 551.0,76.0 531.0,85.6 508.0,74.5" fill="#ffae80" stroke="#ffbf96" stroke-width="1"/>
+<polyline points="527.0,69.2 533.0,72.1" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="522.0,71.6 528.0,74.5" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="517.0,74.0 523.0,76.9" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polygon points="576.0,88.0 556.0,97.6 556.0,105.6 576.0,96.0" fill="#985438" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="533.0,86.5 556.0,97.6 556.0,105.6 533.0,94.5" fill="#b86038" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="553.0,76.9 576.0,88.0 556.0,97.6 533.0,86.5" fill="#ff9866" stroke="#ffbf96" stroke-width="1"/>
+<polyline points="552.0,81.2 558.0,84.1" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="547.0,83.6 553.0,86.5" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="542.0,86.0 548.0,88.9" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polygon points="528.0,87.0 508.0,96.6 508.0,104.6 528.0,95.0" fill="#985438" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="485.0,85.6 508.0,96.6 508.0,104.6 485.0,93.6" fill="#b86038" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="505.0,76.0 528.0,87.0 508.0,96.6 485.0,85.6" fill="#ffab7b" stroke="#ffbf96" stroke-width="1"/>
+<polyline points="504.0,80.3 510.0,83.2" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="499.0,82.7 505.0,85.6" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="494.0,85.1 500.0,88.0" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polygon points="553.0,99.0 533.0,108.6 533.0,116.6 553.0,107.0" fill="#985438" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="510.0,97.6 533.0,108.6 533.0,116.6 510.0,105.6" fill="#b86038" stroke="#ffbf96" stroke-width="1"/>
+<polygon points="530.0,88.0 553.0,99.0 533.0,108.6 510.0,97.6" fill="#ff8855" stroke="#ffbf96" stroke-width="1"/>
+<polyline points="529.0,92.3 535.0,95.2" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="524.0,94.7 530.0,97.6" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+<polyline points="519.0,97.1 525.0,100.0" fill="none" stroke="#cc724b" stroke-width="0.8"/>
+</g><g id="overview-npu">
+<polyline points="867.0,110.1 857.0,105.3 856.0,102.9 851.0,100.5" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="867.0,112.1 857.0,107.3 856.0,104.9 851.0,102.5" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="961.0,155.2 970.0,159.6 971.0,162.0 976.0,164.4" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="961.0,157.2 970.0,161.6 971.0,164.0 976.0,166.4" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="889.0,112.0 897.0,108.2 898.0,105.8 902.0,103.9" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="889.0,114.0 897.0,110.2 898.0,107.8 902.0,105.9" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="803.0,153.3 795.0,157.2 794.0,159.6 789.0,162.0" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="803.0,155.3 795.0,159.2 794.0,161.6 789.0,164.0" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="861.0,113.0 851.0,108.2 850.0,105.8 845.0,103.4" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="861.0,115.0 851.0,110.2 850.0,107.8 845.0,105.4" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="955.0,158.1 964.0,162.4 965.0,164.8 970.0,167.2" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="955.0,160.1 964.0,164.4 965.0,166.8 970.0,169.2" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="895.0,114.9 903.0,111.1 904.0,108.7 908.0,106.8" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="895.0,116.9 903.0,113.1 904.0,110.7 908.0,108.8" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="809.0,156.2 801.0,160.0 800.0,162.4 795.0,164.8" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="809.0,158.2 801.0,162.0 800.0,164.4 795.0,166.8" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="855.0,115.9 845.0,111.1 844.0,108.7 839.0,106.3" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="855.0,117.9 845.0,113.1 844.0,110.7 839.0,108.3" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="949.0,161.0 958.0,165.3 959.0,167.7 964.0,170.1" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="949.0,163.0 958.0,167.3 959.0,169.7 964.0,172.1" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="901.0,117.8 909.0,114.0 910.0,111.6 914.0,109.6" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="901.0,119.8 909.0,116.0 910.0,113.6 914.0,111.6" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="815.0,159.1 807.0,162.9 806.0,165.3 801.0,167.7" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="815.0,161.1 807.0,164.9 806.0,167.3 801.0,169.7" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="849.0,118.8 839.0,114.0 838.0,111.6 833.0,109.2" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="849.0,120.8 839.0,116.0 838.0,113.6 833.0,111.2" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="943.0,163.9 952.0,168.2 953.0,170.6 958.0,173.0" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="943.0,165.9 952.0,170.2 953.0,172.6 958.0,175.0" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="907.0,120.7 915.0,116.8 916.0,114.4 920.0,112.5" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="907.0,122.7 915.0,118.8 916.0,116.4 920.0,114.5" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="821.0,162.0 813.0,165.8 812.0,168.2 807.0,170.6" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="821.0,164.0 813.0,167.8 812.0,170.2 807.0,172.6" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="843.0,121.6 833.0,116.8 832.0,114.4 827.0,112.0" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="843.0,123.6 833.0,118.8 832.0,116.4 827.0,114.0" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="937.0,166.8 946.0,171.1 947.0,173.5 952.0,175.9" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="937.0,168.8 946.0,173.1 947.0,175.5 952.0,177.9" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="913.0,123.6 921.0,119.7 922.0,117.3 926.0,115.4" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="913.0,125.6 921.0,121.7 922.0,119.3 926.0,117.4" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="827.0,164.8 819.0,168.7 818.0,171.1 813.0,173.5" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="827.0,166.8 819.0,170.7 818.0,173.1 813.0,175.5" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="837.0,124.5 827.0,119.7 826.0,117.3 821.0,114.9" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="837.0,126.5 827.0,121.7 826.0,119.3 821.0,116.9" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="931.0,169.6 940.0,174.0 941.0,176.4 946.0,178.8" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="931.0,171.6 940.0,176.0 941.0,178.4 946.0,180.8" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="919.0,126.4 927.0,122.6 928.0,120.2 932.0,118.3" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="919.0,128.4 927.0,124.6 928.0,122.2 932.0,120.3" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="833.0,167.7 825.0,171.6 824.0,174.0 819.0,176.4" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="833.0,169.7 825.0,173.6 824.0,176.0 819.0,178.4" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="831.0,127.4 821.0,122.6 820.0,120.2 815.0,117.8" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="831.0,129.4 821.0,124.6 820.0,122.2 815.0,119.8" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="925.0,172.5 934.0,176.8 935.0,179.2 940.0,181.6" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="925.0,174.5 934.0,178.8 935.0,181.2 940.0,183.6" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="925.0,129.3 933.0,125.5 934.0,123.1 938.0,121.2" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="925.0,131.3 933.0,127.5 934.0,125.1 938.0,123.2" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="839.0,170.6 831.0,174.4 830.0,176.8 825.0,179.2" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="839.0,172.6 831.0,176.4 830.0,178.8 825.0,181.2" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="825.0,130.3 815.0,125.5 814.0,123.1 809.0,120.7" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="825.0,132.3 815.0,127.5 814.0,125.1 809.0,122.7" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="919.0,175.4 928.0,179.7 929.0,182.1 934.0,184.5" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="919.0,177.4 928.0,181.7 929.0,184.1 934.0,186.5" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="931.0,132.2 939.0,128.4 940.0,126.0 944.0,124.0" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="931.0,134.2 939.0,130.4 940.0,128.0 944.0,126.0" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="845.0,173.5 837.0,177.3 836.0,179.7 831.0,182.1" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="845.0,175.5 837.0,179.3 836.0,181.7 831.0,184.1" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="819.0,133.2 809.0,128.4 808.0,126.0 803.0,123.6" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="819.0,135.2 809.0,130.4 808.0,128.0 803.0,125.6" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="913.0,178.3 922.0,182.6 923.0,185.0 928.0,187.4" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="913.0,180.3 922.0,184.6 923.0,187.0 928.0,189.4" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="937.0,135.1 945.0,131.2 946.0,128.8 950.0,126.9" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="937.0,137.1 945.0,133.2 946.0,130.8 950.0,128.9" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="851.0,176.4 843.0,180.2 842.0,182.6 837.0,185.0" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="851.0,178.4 843.0,182.2 842.0,184.6 837.0,187.0" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="813.0,136.0 803.0,131.2 802.0,128.8 797.0,126.4" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="813.0,138.0 803.0,133.2 802.0,130.8 797.0,128.4" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="907.0,181.2 916.0,185.5 917.0,187.9 922.0,190.3" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="907.0,183.2 916.0,187.5 917.0,189.9 922.0,192.3" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="943.0,138.0 951.0,134.1 952.0,131.7 956.0,129.8" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="943.0,140.0 951.0,136.1 952.0,133.7 956.0,131.8" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="857.0,179.2 849.0,183.1 848.0,185.5 843.0,187.9" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="857.0,181.2 849.0,185.1 848.0,187.5 843.0,189.9" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="807.0,138.9 797.0,134.1 796.0,131.7 791.0,129.3" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="807.0,140.9 797.0,136.1 796.0,133.7 791.0,131.3" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="901.0,184.0 910.0,188.4 911.0,190.8 916.0,193.2" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="901.0,186.0 910.0,190.4 911.0,192.8 916.0,195.2" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="949.0,140.8 957.0,137.0 958.0,134.6 962.0,132.7" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="949.0,142.8 957.0,139.0 958.0,136.6 962.0,134.7" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="863.0,182.1 855.0,186.0 854.0,188.4 849.0,190.8" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="863.0,184.1 855.0,188.0 854.0,190.4 849.0,192.8" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="801.0,141.8 791.0,137.0 790.0,134.6 785.0,132.2" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="801.0,143.8 791.0,139.0 790.0,136.6 785.0,134.2" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="895.0,186.9 904.0,191.2 905.0,193.6 910.0,196.0" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="895.0,188.9 904.0,193.2 905.0,195.6 910.0,198.0" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="955.0,143.7 963.0,139.9 964.0,137.5 968.0,135.6" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="955.0,145.7 963.0,141.9 964.0,139.5 968.0,137.6" fill="none" stroke="#445157" stroke-width="1"/>
+<polyline points="869.0,185.0 861.0,188.8 860.0,191.2 855.0,193.6" fill="none" stroke="#9eacb1" stroke-width="1.85"/>
+<polyline points="869.0,187.0 861.0,190.8 860.0,193.2 855.0,195.6" fill="none" stroke="#445157" stroke-width="1"/>
+<polygon points="976.0,138.9 884.0,183.1 884.0,194.1 976.0,149.9" fill="#282f34" stroke="#9aa6a9" stroke-width="1.1"/>
+<polygon points="784.0,135.1 884.0,183.1 884.0,194.1 784.0,146.1" fill="#373e43" stroke="#9aa6a9" stroke-width="1.1"/>
+<polygon points="876.0,90.9 976.0,138.9 884.0,183.1 784.0,135.1" fill="#455057" stroke="#9aa6a9" stroke-width="1.1"/>
+<polygon points="876.0,95.7 966.0,138.9 884.0,178.3 794.0,135.1" fill="#465057" stroke="#808c91" stroke-width="0.85"/>
+<polyline points="869.0,99.1 876.0,102.4 878.0,106.3" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="959.0,142.3 952.0,138.9 945.0,138.4" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="806.0,139.9 812.0,137.0 818.0,136.0" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="887.0,101.0 880.0,104.4 879.0,107.7" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="863.0,102.0 870.0,105.3 872.0,109.2" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="953.0,145.2 946.0,141.8 939.0,141.3" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="812.0,142.8 818.0,139.9 824.0,138.9" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="893.0,103.9 886.0,107.2 885.0,110.6" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="857.0,104.8 864.0,108.2 866.0,112.0" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="947.0,148.0 940.0,144.7 933.0,144.2" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="818.0,145.6 824.0,142.8 830.0,141.8" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="899.0,106.8 892.0,110.1 891.0,113.5" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="851.0,107.7 858.0,111.1 860.0,114.9" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="941.0,150.9 934.0,147.6 927.0,147.1" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="824.0,148.5 830.0,145.6 836.0,144.7" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="905.0,109.6 898.0,113.0 897.0,116.4" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="845.0,110.6 852.0,114.0 854.0,117.8" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="935.0,153.8 928.0,150.4 921.0,150.0" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="830.0,151.4 836.0,148.5 842.0,147.6" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="911.0,112.5 904.0,115.9 903.0,119.2" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="839.0,113.5 846.0,116.8 848.0,120.7" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="929.0,156.7 922.0,153.3 915.0,152.8" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="836.0,154.3 842.0,151.4 848.0,150.4" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="917.0,115.4 910.0,118.8 909.0,122.1" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="833.0,116.4 840.0,119.7 842.0,123.6" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="923.0,159.6 916.0,156.2 909.0,155.7" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="842.0,157.2 848.0,154.3 854.0,153.3" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="923.0,118.3 916.0,121.6 915.0,125.0" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="827.0,119.2 834.0,122.6 836.0,126.4" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="917.0,162.4 910.0,159.1 903.0,158.6" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="848.0,160.0 854.0,157.2 860.0,156.2" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="929.0,121.2 922.0,124.5 921.0,127.9" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="821.0,122.1 828.0,125.5 830.0,129.3" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="911.0,165.3 904.0,162.0 897.0,161.5" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="854.0,162.9 860.0,160.0 866.0,159.1" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="935.0,124.0 928.0,127.4 927.0,130.8" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="815.0,125.0 822.0,128.4 824.0,132.2" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="905.0,168.2 898.0,164.8 891.0,164.4" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="860.0,165.8 866.0,162.9 872.0,162.0" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="941.0,126.9 934.0,130.3 933.0,133.6" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="809.0,127.9 816.0,131.2 818.0,135.1" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="899.0,171.1 892.0,167.7 885.0,167.2" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="866.0,168.7 872.0,165.8 878.0,164.8" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="947.0,129.8 940.0,133.2 939.0,136.5" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="803.0,130.8 810.0,134.1 812.0,138.0" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="893.0,174.0 886.0,170.6 879.0,170.1" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="872.0,171.6 878.0,168.7 884.0,167.7" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polyline points="953.0,132.7 946.0,136.0 945.0,139.4" fill="none" stroke="#acb7b8" stroke-width="0.8"/>
+<polygon points="875.0,94.7 878.0,96.2 875.0,97.6 872.0,96.2" fill="#ebc8a4" stroke="none" stroke-width="1"/>
+<polygon points="963.0,137.0 966.0,138.4 963.0,139.8 960.0,138.4" fill="#ebc8a4" stroke="none" stroke-width="1"/>
+<polygon points="885.0,174.4 888.0,175.8 885.0,177.3 882.0,175.8" fill="#ebc8a4" stroke="none" stroke-width="1"/>
+<polygon points="797.0,132.2 800.0,133.6 797.0,135.0 794.0,133.6" fill="#ebc8a4" stroke="none" stroke-width="1"/>
+<polygon points="946.0,122.9 884.0,152.7 884.0,161.7 946.0,131.9" fill="#4c575d" stroke="#c3cccc" stroke-width="1.15"/>
+<polygon points="814.0,119.1 884.0,152.7 884.0,161.7 814.0,128.1" fill="#637076" stroke="#c3cccc" stroke-width="1.15"/>
+<polygon points="876.0,89.3 946.0,122.9 884.0,152.7 814.0,119.1" fill="#9aa5a7" stroke="#c3cccc" stroke-width="1.15"/>
+<polygon points="936.0,113.9 884.0,138.9 884.0,144.9 936.0,119.9" fill="#515d62" stroke="#c0cbcc" stroke-width="1.05"/>
+<polygon points="824.0,110.1 884.0,138.9 884.0,144.9 824.0,116.1" fill="#656f72" stroke="#c0cbcc" stroke-width="1.05"/>
+<polygon points="876.0,85.1 936.0,113.9 884.0,138.9 824.0,110.1" fill="#707d82" stroke="#c0cbcc" stroke-width="1.05"/>
+<polygon points="876.0,89.9 904.0,103.4 885.0,112.5 857.0,99.0" fill="#4c595e" stroke="#c1cccb" stroke-width="0.72"/>
+<polygon points="854.0,100.5 882.0,113.9 863.0,123.0 835.0,109.6" fill="#58666b" stroke="#c1cccb" stroke-width="0.72"/>
+<polygon points="908.0,105.3 925.0,113.4 884.0,133.1 867.0,125.0" fill="#6a7579" stroke="#c1cccb" stroke-width="0.72"/>
+<polyline points="876.0,92.8 863.0,99.0" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="854.0,103.4 841.0,109.6" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="880.0,94.7 867.0,101.0" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="858.0,105.3 845.0,111.5" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="884.0,96.6 871.0,102.9" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="862.0,107.2 849.0,113.4" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="888.0,98.6 875.0,104.8" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="866.0,109.1 853.0,115.4" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="892.0,100.5 879.0,106.7" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="870.0,111.0 857.0,117.3" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="896.0,102.4 883.0,108.6" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="874.0,113.0 861.0,119.2" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="900.0,104.3 887.0,110.6" fill="none" stroke="#8e9b9e" stroke-width="0.65"/>
+<polyline points="878.0,114.9 865.0,121.1" fill="none" stroke="#a1aaab" stroke-width="0.65"/>
+<polyline points="907.0,108.6 918.0,113.9" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="903.0,110.6 914.0,115.8" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="899.0,112.5 910.0,117.8" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="895.0,114.4 906.0,119.7" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="891.0,116.3 902.0,121.6" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="887.0,118.2 898.0,123.5" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="883.0,120.2 894.0,125.4" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="879.0,122.1 890.0,127.4" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+<polyline points="875.0,124.0 886.0,129.3" fill="none" stroke="#b3bcba" stroke-width="0.8"/>
+</g>
+<text x="180" y="233" fill="#eef1ef" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="650">PyTorch</text>
+<text x="530" y="233" fill="#ffae85" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="650">torch-tilelang</text>
+<text x="880" y="233" fill="#eef1ef" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="650">Ascend NPU</text>
+</g></svg>
+        <ol class="mobile-map"><li><svg viewBox="63 8 234 205" aria-hidden="true"><use href="#overview-fx-sheets"/></svg><div><strong>PyTorch</strong><small>TorchDynamo 捕获 FX 图</small></div></li>
+        <li><svg viewBox="413 8 234 205" aria-hidden="true"><use href="#overview-compiler"/></svg><div><strong>torch-tilelang</strong><small>分区、转换和编译内核</small></div></li>
+        <li><svg viewBox="763 8 234 205" aria-hidden="true"><use href="#overview-npu"/></svg><div><strong>Ascend NPU</strong><small>在当前 NPU 流上运行</small></div></li></ol>
+      </div></div>
+      <figcaption><dl class="route-details" aria-live="polite" aria-atomic="true"><div><dt>编译目标</dt><dd class="route-value" id="route-target">ascendc</dd></div><div><dt>执行适配器</dt><dd id="route-adapter">tvm_ffi</dd></div><div><dt>代码生成器</dt><dd id="route-codegen">target.build.tilelang_ascend</dd></div></dl></figcaption>
+    </figure>
+  </section>
+  <section class="section" id="flow" aria-labelledby="flow-title"><div class="section-head"><h2 id="flow-title">编译流程</h2><p>跟踪一个 FX 分区从捕获、编译到再次执行的路径。</p></div>
+<div class="flow-widget" id="flow-widget">
+  <div class="flow-switch" role="tablist" aria-label="选择执行路径">
+    <button type="button" role="tab" id="flow-tab-first" aria-controls="flow-first" aria-selected="true">首次调用</button>
+    <button type="button" role="tab" id="flow-tab-hit" aria-controls="flow-hit" aria-selected="false" tabindex="-1">签名命中</button>
+    <button type="button" role="tab" id="flow-tab-errors" aria-controls="flow-errors" aria-selected="false" tabindex="-1">回退与报错</button>
+  </div>
+  <div class="flow-pane" id="flow-first" role="tabpanel" aria-labelledby="flow-tab-first" tabindex="0">
+    <ol class="flow-steps" aria-label="首次编译顺序">
+      <li class="flow-step"><h3>预检并分区</h3><p>Dynamo 交出 FX 图。后端检查目标与代码生成器，将支持的算子组合成分区。</p></li>
+      <li class="flow-step"><h3>转换 FX 分区</h3><p>分区首次收到真实张量时检查输入。FX 转为 Relax，算子计算经 <code>LegalizeOps</code> 降为 TIR。</p></li>
+      <li class="flow-step"><h3>调度并编译</h3><p>依次尝试逐元素、归约和 GEMM 调度，交给 TileLang 编译，按调用顺序构建基础执行计划。</p></li>
+      <li class="flow-step"><h3>校验基础计划</h3><p>用同一组输入运行基础计划和原 PyTorch 分区，核对输出结构、类型及数值。</p></li>
+    </ol>
+    <div class="flow-outcome" aria-label="校验通过后的两条执行路径">
+      <div class="flow-path"><span class="flow-when">默认路径</span><span>保存基础执行器及输入签名，然后调用执行器。</span></div>
+      <div class="flow-path"><span class="flow-when">启用融合</span><span><code>fusion="profile"</code> 会编译融合候选。候选通过校验且实测耗时达标时采用融合计划，否则保留基础计划。</span></div>
+    </div>
+    <p class="flow-sources"><span>相关源码</span><a href="../src/torch_tilelang/backend.py">backend.py</a><a href="../src/torch_tilelang/frontend.py">frontend.py</a><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a><a href="../src/torch_tilelang/fusion.py">fusion.py</a></p>
+  </div>
+  <div class="flow-pane" id="flow-hit" role="tabpanel" aria-labelledby="flow-tab-hit" tabindex="0" hidden>
+    <ol class="flow-steps flow-three" aria-label="签名命中后的执行顺序">
+      <li class="flow-step"><h3>再次进入同一分区</h3><p>分区读取梯度模式与输入的形状、类型、设备、步幅、存储偏移和 <code>requires_grad</code>。</p></li>
+      <li class="flow-step"><h3>命中最近签名</h3><p>张量的值可以变化。签名一致时，分区直接取出上次保存的执行器。</p></li>
+      <li class="flow-step"><h3>运行既有计划</h3><p>编译路径由 Torch 分配内核输出，在当前 NPU 流上启动内核。已回退的分区则继续调用原 PyTorch 实现。</p></li>
+    </ol>
+    <div class="flow-outcome"><div class="flow-path"><span class="flow-when">签名变化</span><span>分区按新输入重新准备执行器，并替换此前保存的签名和执行器。</span></div></div>
+    <p class="flow-sources"><span>相关源码</span><a href="../src/torch_tilelang/backend.py">backend.py</a><a href="../src/torch_tilelang/runtime.py">runtime.py</a></p>
+  </div>
+  <div class="flow-pane" id="flow-errors" role="tabpanel" aria-labelledby="flow-tab-errors" tabindex="0" hidden>
+    <p class="flow-label">失败发生在哪一步？</p>
+    <ul class="flow-errors" aria-label="按发生位置分支">
+      <li><strong>目标预检失败</strong><p>目标与适配器冲突或缺少代码生成器时，分区前直接抛错。</p></li>
+      <li><strong>整图无法分区</strong><p>遇到不安全副作用、非张量输入或没有支持的分区时，默认由 PyTorch 执行整图。<code>strict=True</code> 时抛错。</p></li>
+      <li><strong>分区准备失败</strong><p>输入检查、转换、基线编译失败，或基线输出校验未通过，默认仅此分区回退。<code>strict=True</code> 时抛错。</p></li>
+      <li><strong>融合候选被拒绝</strong><p>候选编译失败、数值不符或缺少合格的计时结果时，保留已通过校验的基础执行器。</p></li>
+      <li><strong>设备执行失败</strong><p>内核运行或同步产生的错误直接传给调用方。</p></li>
+    </ul>
+    <div class="flow-outcome"><div class="flow-path"><span class="flow-when">执行报告</span><span>查看 <code>graph_report.fallback_reason</code> 定位整图回退，或在 <code>graph_report.partitions</code> 中查看各分区的回退原因与调用计数。</span></div></div>
+    <p class="flow-sources"><span>相关源码</span><a href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py</a><a href="../src/torch_tilelang/backend.py">backend.py</a><a href="../src/torch_tilelang/fusion.py">fusion.py</a></p>
+  </div>
+</div>
+  </section>
+  <section class="section" id="modules" aria-labelledby="module-title"><div class="section-head"><h2 id="module-title">模块依赖</h2><p>选择一个模块，查看它直接导入的项目代码及对应源码。</p></div>
+<div class="dep-explorer" id="dep-explorer">
+  <figure class="dep-figure" aria-label="Python 核心模块直接导入关系">
+    <div class="dep-toolbar"><span><svg width="18" height="16" viewBox="0 0 18 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M1.5 4.5V2.5h5l1.7 2h8.3v9h-15z"/></svg>src/torch_tilelang</span></div>
+    <div class="dep-stage">
+      <svg viewBox="0 0 720 320" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <marker id="dep-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 8 4 0 8z" fill="#b9c3c6"/></marker>
+          <marker id="dep-arrow-on" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 8 4 0 8z" fill="#cd6036"/></marker>
+        </defs>
+        <g id="dep-wires">
+          <path class="dep-wire" data-dep-from="runtime" data-dep-to="config" d="M364 130V85"/>
+          <path class="dep-wire" data-dep-from="runtime" data-dep-to="frontend" d="M322 130V108H175V85"/>
+          <path class="dep-wire" data-dep-from="runtime" data-dep-to="tilelang" d="M364 182V227"/>
+          <path class="dep-wire" data-dep-from="runtime" data-dep-to="fusion" d="M446 156H512"/>
+          <path class="dep-wire" data-dep-from="runtime" data-dep-to="schedule" d="M446 171H478V255H512"/>
+          <path class="dep-wire" data-dep-from="tilelang" data-dep-to="frontend" d="M282 255H27V107H83V85"/>
+          <path class="dep-wire" data-dep-from="tilelang" data-dep-to="config" d="M282 244H261V96H324V85"/>
+          <path class="dep-wire" data-dep-from="fusion" data-dep-to="profiler" d="M596 130V85"/>
+          <path class="dep-wire dep-on" data-dep-from="backend" data-dep-to="frontend" d="M124 130V85"/>
+          <path class="dep-wire dep-on" data-dep-from="backend" data-dep-to="runtime" d="M206 156H280"/>
+          <path class="dep-wire dep-on" data-dep-from="backend" data-dep-to="config" d="M206 144H236V57H280"/>
+          <path class="dep-wire dep-on" data-dep-from="backend" data-dep-to="fusion" d="M124 182V206H565V184"/>
+        </g>
+      </svg>
+      <button class="dep-node" type="button" data-dep-id="backend" aria-pressed="true" style="--dep-x:17.22%;--dep-y:48.75%"><code>backend.py</code><small>后端入口</small></button>
+      <button class="dep-node" type="button" data-dep-id="runtime" aria-pressed="false" style="--dep-x:50.56%;--dep-y:48.75%"><code>runtime.py</code><small>执行计划</small></button>
+      <button class="dep-node" type="button" data-dep-id="frontend" aria-pressed="false" style="--dep-x:17.22%;--dep-y:17.81%"><code>frontend.py</code><small>图转换</small></button>
+      <button class="dep-node" type="button" data-dep-id="config" aria-pressed="false" style="--dep-x:50.56%;--dep-y:17.81%"><code>config.py</code><small>编译选项</small></button>
+      <button class="dep-node" type="button" data-dep-id="fusion" aria-pressed="false" style="--dep-x:82.78%;--dep-y:48.75%"><code>fusion.py</code><small>融合评估</small></button>
+      <button class="dep-node" type="button" data-dep-id="profiler" aria-pressed="false" style="--dep-x:82.78%;--dep-y:17.81%"><code>profiler.py</code><small>计时适配</small></button>
+      <button class="dep-node" type="button" data-dep-id="tilelang" aria-pressed="false" style="--dep-x:50.56%;--dep-y:79.69%"><code>tilelang.py</code><small>编译器适配</small></button>
+      <button class="dep-node" type="button" data-dep-id="schedule" aria-pressed="false" style="--dep-x:82.78%;--dep-y:79.69%"><code>schedule.py</code><small>调度选择</small></button>
+    </div>
+    <div class="dep-mobile">
+      <label class="dep-picker-label">查看模块 <select class="dep-picker" aria-label="选择要查看的模块"></select></label>
+      <ul class="dep-branches" aria-label="直接导入的模块"></ul>
+      <p class="dep-mobile-empty" hidden>此模块没有包内导入。</p>
+    </div>
+    <figcaption class="dep-caption"><span class="dep-key" aria-hidden="true"></span>图中箭头表示核心模块间的直接导入，包含函数内导入。详情列出所选模块的全部包内导入。</figcaption>
+  </figure>
+  <aside class="dep-detail" aria-live="polite" aria-atomic="true" aria-label="所选模块详情">
+    <h3 class="dep-name">backend.py</h3>
+    <p class="dep-role">接收 Dynamo 捕获的 FX 图，划分可编译分区，在首次调用时准备并校验执行器。</p>
+    <span class="dep-sub">包内直接导入</span>
+    <ul class="dep-imports"><li><code>config.py</code></li><li><code>frontend.py</code></li><li><code>runtime.py</code></li><li><code>fusion.py</code></li></ul>
+    <a class="dep-source" href="../src/torch_tilelang/backend.py">查看源码</a>
+  </aside>
+</div>
+  </section>
+  <section class="section" id="example" aria-labelledby="sample-title"><div class="section-head"><h2 id="sample-title">运行一个推理分区</h2><p>下面的模型将一个长度为 65 的偏置广播到 7 行，然后依次执行 ReLU 和乘法。</p></div>
+    <div class="walkthrough"><div class="code-panel"><div class="code-head"><span>Python · torch.compile</span><button class="copy-btn" type="button" id="copy-code" aria-live="polite">复制代码</button></div>
+<pre tabindex="0" aria-label="PyTorch 推理示例"><code id="sample-code"><span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">model</span>(x, bias):
+    <span class="kw">return</span> torch.relu(x + bias) * bias
+
+compiled = torch.compile(
+    model, backend=<span class="str">"tilelang"</span>, fullgraph=<span class="kw">True</span>,
+    options={<span class="str">"target"</span>: <span class="str" id="code-target">"ascendc"</span>, <span class="str">"strict"</span>: <span class="kw">True</span>},
+)
+x = torch.randn(7, 65, device=<span class="str">"npu"</span>)
+bias = torch.randn(65, device=<span class="str">"npu"</span>)
+<span class="kw">with</span> torch.no_grad():
+    torch.testing.assert_close(compiled(x, bias), model(x, bias))</code></pre></div>
+      <div class="walk-info"><h3>哪些输入可以编译？</h3><p>输入须位于同一张 NPU，采用正的静态维度、连续布局和零存储偏移。不同算子还有各自的调度条件。</p>
+        <dl class="support-list"><div><dt>逐元素</dt><dd>支持 fp16、bf16、fp32，可处理受支持的广播和类型转换。</dd></div><div><dt>末轴归约</dt><dd>对完整末轴求和、均值或最大值，长度上限为 16,384。</dd></div><div><dt>二维 GEMM</dt><dd>两个输入均为 fp16 或均为 bf16，M、N、K 都是 16 的倍数。</dd></div></dl>
+        <p class="source-links"><a class="source-link" href="../README.md">安装说明</a><a class="source-link" href="compatibility.md">工具链要求</a><a class="source-link" href="../examples/ascend/test_torch_compile.py">完整测试用例</a></p>
+      </div></div>
+  </section>
+  <footer class="footer"><span class="wordmark">torch-tilelang</span><span>源码基准 <a href="https://github.com/easy-tilelang/torch-tilelang/tree/930544b1c4013969d9905f32cef906e50bdbdb64"><code>930544b</code></a></span></footer>
+</main>
+<script>
+(() => {
+  const widget = document.getElementById("flow-widget");
+  const tabs = Array.from(widget.querySelectorAll('[role="tab"]'));
+  function activate(tab) {
+    for (const item of tabs) {
+      const selected = item === tab;
+      item.setAttribute("aria-selected", String(selected));
+      item.tabIndex = selected ? 0 : -1;
+      document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+    }
+  }
+  for (const [index, tab] of tabs.entries()) {
+    tab.addEventListener("click", () => activate(tab));
+    tab.addEventListener("keydown", event => {
+      const offsets = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index + tabs.length - 1) % tabs.length, Home: 0, End: tabs.length - 1 };
+      if (!(event.key in offsets)) return;
+      event.preventDefault();
+      const next = tabs[offsets[event.key]];
+      activate(next);
+      next.focus();
+    });
+  }
+})();
+
+
+(() => {
+  const explorer = document.getElementById('dep-explorer');
+  const modules = {
+    backend: ['backend.py', '接收 Dynamo 捕获的 FX 图，划分可编译分区，在首次调用时准备并校验执行器。', ['config', 'frontend', 'runtime', 'fusion']],
+    runtime: ['runtime.py', '为 Relax 主函数建立执行计划，编译对应的 TIR 内核。执行时由 Torch 分配内核输出并在当前 NPU 流上运行。', ['config', 'frontend', 'tilelang', 'schedule', 'fusion']],
+    frontend: ['frontend.py', '检查输入的设备、形状和布局，通过 TVM 的 FX 导入器将分区转成 Relax，再将算子计算降为 TIR。', []],
+    config: ['config.py', 'GraphConfig 保存目标、执行适配器、调度和融合参数，并在创建配置时验证这些选项。', []],
+    fusion: ['fusion.py', '构建融合候选图，校验分区输出，并结合设备耗时与分区调用耗时选择执行方案。', ['profiler', 'errors']],
+    profiler: ['compat/profiler.py', '封装 TileLang 的 do_bench，并将缺少可用计时结果的情况转换成 MeasurementUnavailableError。', ['errors']],
+    tilelang: ['compat/tilelang.py', '解析 AscendC 或 PTO 目标及适配器，调用 TileLang 的编译或源码生成接口。', ['config', 'frontend']],
+    schedule: ['schedules/ascend/schedule.py', '为每个 PrimFunc 依次尝试逐元素、归约和矩阵乘法调度，返回首个适用的方案。', ['elementwise', 'operators']],
+    elementwise: ['schedules/ascend/elementwise.py', '检查逐元素计算和索引映射，将输出分块并映射到核心与 SimtVF 线程。', []],
+    operators: ['schedules/ascend/operators.py', '识别末轴归约、二维矩阵乘法及其局部后处理，生成相应的 Ascend 调度。', ['elementwise']],
+    errors: ['errors.py', '定义 MeasurementUnavailableError，供计时适配与融合评估共享。', []]
+  };
+  const nodes = [...explorer.querySelectorAll('[data-dep-id]')];
+  const paths = [...explorer.querySelectorAll('[data-dep-from]')];
+  const picker = explorer.querySelector('.dep-picker');
+  const branchList = explorer.querySelector('.dep-branches');
+  const imports = explorer.querySelector('.dep-imports');
+  const source = explorer.querySelector('.dep-source');
+  const shortName = id => modules[id][0].split('/').pop();
+  Object.keys(modules).forEach(id => picker.add(new Option(shortName(id), id)));
+  function selectModule(id) {
+    const [file, role, targets] = modules[id];
+    nodes.forEach(node => {
+      const key = node.dataset.depId;
+      node.setAttribute('aria-pressed', String(key === id));
+      node.classList.toggle('dep-target', targets.includes(key));
+    });
+    paths.forEach(path => {
+      const relevant = path.dataset.depFrom === id;
+      path.classList.toggle('dep-on', relevant);
+      if (relevant) path.parentNode.append(path);
+    });
+    picker.value = id;
+    explorer.querySelector('.dep-name').textContent = shortName(id);
+    explorer.querySelector('.dep-role').textContent = role;
+    explorer.querySelector('.dep-mobile-empty').hidden = targets.length > 0;
+    source.href = '../src/torch_tilelang/' + file;
+    source.setAttribute('aria-label', '查看 ' + file + ' 的源码');
+    imports.replaceChildren();
+    branchList.replaceChildren();
+    for (const target of targets) {
+      const item = document.createElement('li');
+      const code = document.createElement('code');
+      code.textContent = modules[target][0];
+      item.append(code);
+      imports.append(item);
+      const branch = document.createElement('li');
+      const button = document.createElement('button');
+      button.className = 'dep-mobile-target';
+      button.type = 'button';
+      button.textContent = shortName(target);
+      button.addEventListener('click', () => {
+        selectModule(target);
+        picker.focus();
+      });
+      branch.append(button);
+      branchList.append(branch);
+    }
+    if (targets.length === 0) {
+      const item = document.createElement('li');
+      item.textContent = '无';
+      imports.append(item);
+    }
+  }
+  nodes.forEach(node => node.addEventListener('click', () => selectModule(node.dataset.depId)));
+  picker.addEventListener('change', () => selectModule(picker.value));
+  selectModule('backend');
+})();
+
+
+(() => {
+  const routes = {
+    ascendc: { adapter: "tvm_ffi", codegen: "target.build.tilelang_ascend" },
+    pto: { adapter: "pto", codegen: "target.build.tilelang_pto_without_compile" }
+  };
+  for (const button of document.querySelectorAll("[data-route]")) {
+    button.addEventListener("click", () => {
+      const target = button.dataset.route;
+      for (const other of document.querySelectorAll("[data-route]")) {
+        other.setAttribute("aria-pressed", String(button === other));
+      }
+      document.getElementById("route-target").textContent = target;
+      document.getElementById("route-adapter").textContent = routes[target].adapter;
+      document.getElementById("route-codegen").textContent = routes[target].codegen;
+      document.getElementById("code-target").textContent = JSON.stringify(target);
+    });
+  }
+  const copyButton = document.getElementById("copy-code");
+  let resetCopy;
+  copyButton.addEventListener("click", async () => {
+    const code = document.getElementById("sample-code");
+    let message = "已复制";
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      if (document.execCommand("copy")) selection.removeAllRanges();
+      else message = "已选中代码，请复制";
+    }
+    copyButton.textContent = message;
+    clearTimeout(resetCopy);
+    resetCopy = setTimeout(() => { copyButton.textContent = "复制代码"; }, 2400);
+  });
+  const navLinks = [...document.querySelectorAll(".site-nav a")];
+  const sections = navLinks.map(link => document.querySelector(link.hash));
+  let queued = false;
+  function updateNav() {
+    const headerHeight = document.querySelector(".site-header").offsetHeight;
+    const atEnd = Math.ceil(scrollY + innerHeight) >= document.documentElement.scrollHeight;
+    const active = atEnd ? sections[sections.length - 1] :
+      sections.filter(section => section.getBoundingClientRect().top <= headerHeight + 26).pop() || sections[0];
+    navLinks.forEach((link, index) => {
+      if (sections[index] === active) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+    queued = false;
+  }
+  function scheduleNav() {
+    if (!queued) { queued = true; requestAnimationFrame(updateNav); }
+  }
+  addEventListener("scroll", scheduleNav, {passive:true});
+  addEventListener("resize", scheduleNav);
+  updateNav();
+})();
+</script>
+</body>
+</html>
