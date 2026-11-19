@@ -217,53 +217,68 @@
       #pipeline .flow-panel { break-inside: avoid; }
     }
 
-    #modules .mod-browser { container-type:inline-size; border:1px solid var(--line,#dbe2db); border-radius:12px; background:white; overflow:hidden; }
-    #modules .mod-switcher { min-inline-size:0; margin:0; padding:0; border:0; font-size:0; }
-    #modules .mod-sr, #modules .mod-radio {
-      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
-      clip-path:inset(50%); white-space:nowrap; border:0;
+    .dep-map { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: white; }
+    .dep-toolbar, .dep-key, .dep-filter, .dep-note { display: flex; align-items: center; }
+    .dep-toolbar { justify-content: space-between; flex-wrap: wrap; gap: .6rem 1.3rem; padding: .75rem 1.2rem; border-bottom: 1px solid var(--line); }
+    .dep-key { flex-wrap: wrap; gap: .45rem 1.25rem; color: var(--muted); font-size: .88rem; }
+    .dep-key span { display: inline-flex; align-items: center; gap: .45rem; }
+    .dep-key i { width: 1.5rem; border-top: 2px solid #397869; }
+    .dep-key .check-line { border-color: #96691d; border-top-style: dashed; }
+    .dep-filter { gap: .45rem; font-size: .9rem; }
+    .dep-filter select { max-width: 13rem; padding: .3rem .45rem; font: inherit; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: white; }
+    .dep-graph { background: #f9fbf8; background-image: radial-gradient(#bbcdc080 .8px, transparent .8px); background-size: 13px 13px; }
+    .dep-layers { display: grid; grid-template-columns: repeat(4, 1fr); padding-top: .9rem; color: var(--muted); font-weight: 600; font-size: .87rem; text-align: center; }
+    .dep-plot { position: relative; height: 25rem; }
+    .dep-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .dep-edge { fill: none; stroke: #397869; stroke-width: 1.75; }
+    .dep-edge.check { stroke: #96691d; stroke-dasharray: 5 3; }
+    .dep-edge.near { stroke-width: 2.7; }
+    .dep-edge.far { opacity: .14; }
+    .dep-node {
+      position: absolute; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+      left: calc(2.5% + var(--column) * 25%); top: calc(var(--row) * 1rem); transform: translateY(-50%);
+      width: 20%; height: 3.9rem; padding: .35rem clamp(.55rem, 1vw, .92rem);
+      border: 1px solid #8db3a1; border-left: 4px solid #588d77; border-radius: 8px; background: #fcfefb;
     }
-    #modules .mod-tab {
-      display:inline-flex; box-sizing:border-box; justify-content:center; align-items:center; width:25%; min-height:48px;
-      border-bottom:1px solid var(--line,#dbe2db); background:#f7f8f5; color:var(--muted,#58695e);
-      cursor:pointer; font:500 .84rem/1.2 var(--mono,monospace);
+    .dep-node.entry { background: #dff1e5; border-color: #75a38d; border-left-color: var(--teal); }
+    .dep-node.check { background: #fffaf0; border-color: #d9c391; border-left-color: #a47b2d; }
+    .dep-node.near { border-color: var(--teal); }
+    .dep-node.picked { border-color: var(--teal); box-shadow: 0 0 0 2px var(--teal); }
+    .dep-node.far { background: #f7f9f6; border-color: #cdd7cf; }
+    .dep-node button { padding: 0; border: 0; background: none; color: var(--ink); font-weight: 680; font-size: 1rem; line-height: 1.45; text-align: left; cursor: pointer; }
+    .dep-node button::after { content: ""; position: absolute; inset: 0; border-radius: 8px; }
+    .dep-node button:hover { color: var(--teal); }
+    .dep-node a { z-index: 1; font: .85rem/1.55 var(--mono); color: #305d4e; }
+    .dep-note { gap: .8rem; margin: 0; padding: .73rem 1.15rem; border-top: 1px solid var(--line); background: #edf5ef; color: var(--ink); font-size: .94rem; }
+    .dep-note strong { flex: none; color: var(--teal); }
+    .dep-details { border-top: 1px solid var(--line); }
+    .dep-details summary { padding: .72rem 1.15rem; color: var(--teal); font-weight: 600; cursor: pointer; }
+    .dep-group { display: grid; grid-template-columns: minmax(10rem, .8fr) minmax(0, 2fr); gap: 1rem; padding: .8rem 1.15rem; border-top: 1px solid var(--line); }
+    .dep-group h4 { margin: .15rem 0; font-size: .93rem; }
+    .dep-group ul { list-style: none; padding: 0; margin: 0; }
+    .dep-group li { display: flex; flex-wrap: wrap; gap: .1rem .6rem; align-items: baseline; padding: .18rem 0; color: var(--muted); font-size: .92rem; }
+    .dep-group li::before { content: "→"; color: var(--teal); }
+    .dep-group a { font-family: var(--mono); overflow-wrap: anywhere; }
+    #modules [hidden] { display: none; }
+    @media (max-width: 760px) {
+      .dep-toolbar { padding: .6rem .8rem; }
+      .dep-filter { margin-left: auto; }
+      .dep-layers { display: none; }
+      .dep-plot { height: 32.6rem; }
+      .dep-node { left: calc(5% + var(--mobile-column) * 52%); width: 38%; top: calc(var(--mobile-row) * 1rem); padding-inline: .55rem; }
+      .dep-node button { font-size: .94rem; }
+      .dep-node a { font-size: .81rem; }
+      .dep-note { align-items: baseline; padding-inline: .75rem; }
+      .dep-group { grid-template-columns: 1fr; gap: .25rem; padding-inline: .85rem; }
     }
-    #modules .mod-tab:hover { color:var(--teal,#126856); background:#edf3ed; }
-    #modules .mod-radio:checked + .mod-tab { color:var(--teal,#126856); background:white; font-weight:700; box-shadow:inset 0 -3px var(--teal,#126856); }
-    #modules .mod-radio:focus-visible + .mod-tab { outline:2px solid #126856; outline-offset:-4px; }
-    #modules .mod-view { display:none; grid-template-columns:minmax(0,.75fr) minmax(0,1.35fr); align-items:center; gap:40px; padding:clamp(18px,3.5%,36px); font-size:1rem; }
-    #mod-backend:checked ~ .view-backend, #mod-runtime:checked ~ .view-runtime,
-    #mod-schedule:checked ~ .view-schedule, #mod-fusion:checked ~ .view-fusion { display:grid; }
-    #modules .mod-source, #modules .mod-target { box-sizing:border-box; position:relative; min-width:0; }
-    #modules .mod-source { padding:18px; background:#eaf4ee; border:1px solid #b6d3c2; border-radius:10px; }
-    #modules .mod-source::after { content:""; position:absolute; left:100%; top:50%; width:21px; border-top:1px solid #a8c4b4; }
-    #modules .mod-source h3 { margin:5px 0 6px; font:600 1.06rem/1.45 var(--mono,monospace); }
-    #modules .mod-source small { color:var(--teal,#126856); font-size:.78rem; font-weight:650; }
-    #modules .mod-source p, #modules .mod-target p { margin:4px 0 0; color:var(--muted,#53685e); font-size:1rem; line-height:1.55; }
-    #modules .mod-targets { list-style:none; padding:0; margin:0; }
-    #modules .mod-targets li { position:relative; list-style:none; margin:0; padding:5px 0; }
-    #modules .mod-targets li::before { content:""; position:absolute; top:0; bottom:0; left:-20px; border-left:1px solid #a8c4b4; }
-    #modules .mod-targets li:first-child::before { top:50%; }
-    #modules .mod-targets li:last-child::before { bottom:50%; }
-    #modules .mod-targets li::after { content:""; position:absolute; left:-20px; width:16px; top:50%; border-top:1px solid #a8c4b4; }
-    #modules .mod-target { padding:10px 14px; border:1px solid var(--line,#dbe2db); border-radius:8px; background:white; }
-    #modules .mod-target::before { content:""; position:absolute; top:calc(50% - 3px); left:-7px; border:3.5px solid transparent; border-left-color:#6b9381; }
-    #modules .mod-browser a { color:var(--teal,#126856); font-family:var(--mono,monospace); overflow-wrap:anywhere; text-decoration:underline; text-decoration-thickness:1px; text-decoration-color:#abc9b9; text-underline-offset:3px; }
-    #modules .mod-browser a:focus-visible { outline:2px solid #126856; outline-offset:2px; }
-    #modules .mod-browser a:hover { text-decoration-color:currentColor; }
-    #modules .mod-target a { font-size:.87rem; font-weight:650; }
-    #modules .mod-target code { font-family:var(--mono,monospace); font-size:.82em; overflow-wrap:anywhere; }
-    @container (max-width: 540px) {
-      #modules .mod-view { grid-template-columns:minmax(0,1fr); gap:12px; padding:16px; }
-      #modules .mod-tab { width:50%; }
-      #modules .mod-source { padding:12px 14px; }
-      #modules .mod-source::after { top:100%; left:12px; height:15px; width:0; border-top:0; border-left:1px solid #a8c4b4; }
-      #modules .mod-targets { margin-left:33px; }
-      #modules .mod-targets li:first-child::before { top:0; }
+    @media (max-width: 370px) {
+      .dep-node { padding-inline: .34rem; }
+      .dep-node a { font-size: .75rem; }
     }
     @media print {
-      #modules .mod-switcher > .mod-tab { display:none; }
-      #modules .mod-switcher > .mod-view { display:grid; break-inside:avoid; border-top:1px solid #ddd; }
+      .dep-filter { display: none; }
+      .dep-edge.far { opacity: 1; }
+      .dep-graph { break-inside: avoid; }
     }
   </style>
 </head>
@@ -621,51 +636,208 @@
 </section>
 <section id="modules" class="content-section" aria-labelledby="modules-title">
   <div class="section-heading">
-    <div>
-      <h2 id="modules-title"><svg class="section-icon" aria-hidden="true"><use href="#i-modules"></use></svg>模块依赖</h2>
-      <p>选择一个调用方，沿箭头查看它直接使用的关键模块。悬停或点按文件名可预览对应代码。</p>
+    <h2 id="modules-title"><svg class="section-icon" aria-hidden="true"><use href="#i-modules"/></svg>模块依赖</h2>
+    <p>从 backend.py 开始，箭头由使用方指向它依赖的模块。点选模块名称可突出相邻关系，悬停或点按文件名可读源码。</p>
+  </div>
+  <div class="dep-map">
+    <div class="dep-toolbar">
+      <div class="dep-key"><span><i></i>编译与执行</span><span><i class="check-line"></i>校验、分析与计时</span></div>
+      <label class="dep-filter" hidden>聚焦模块 <select id="dep-focus"><option value="">全部模块</option></select></label>
     </div>
+    <div class="dep-graph" hidden>
+      <div class="dep-layers" aria-hidden="true"><span>Dynamo 后端</span><span>配置、转换与执行</span><span>校验、调度与编译</span><span>规则与工具</span></div>
+      <div class="dep-plot" role="group" aria-label="项目模块关键直接依赖图">
+        <svg class="dep-wires" aria-hidden="true">
+          <defs>
+            <marker id="dep-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8z" fill="#397869"/></marker>
+            <marker id="dep-check-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8z" fill="#96691d"/></marker>
+          </defs>
+        </svg>
+        <div class="dep-node entry" data-node="backend" style="--column:0; --row:11.1; --mobile-column:0; --mobile-row:2.9">
+          <button type="button" aria-pressed="false">后端入口</button><a data-preview="partition" href="../src/torch_tilelang/backend.py">backend.py</a>
+        </div>
+        <div class="dep-node" data-node="config" style="--column:1; --row:2.6; --mobile-column:1; --mobile-row:2.9">
+          <button type="button" aria-pressed="false">编译配置</button><a data-preview="config" href="../src/torch_tilelang/config.py">config.py</a>
+        </div>
+        <div class="dep-node" data-node="frontend" style="--column:1; --row:7.1; --mobile-column:1; --mobile-row:7.6">
+          <button type="button" aria-pressed="false">FX 图转换</button><a data-preview="import" href="../src/torch_tilelang/frontend.py">frontend.py</a>
+        </div>
+        <div class="dep-node" data-node="runtime" style="--column:1; --row:16.7; --mobile-column:0; --mobile-row:12.6">
+          <button type="button" aria-pressed="false">图执行器</button><a data-preview="execute-plan" href="../src/torch_tilelang/runtime.py">runtime.py</a>
+        </div>
+        <div class="dep-node check" data-node="fusion" style="--column:2; --row:11.1; --mobile-column:1; --mobile-row:18.3">
+          <button type="button" aria-pressed="false">数值校验与融合</button><a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py</a>
+        </div>
+        <div class="dep-node" data-node="schedule" style="--column:2; --row:16.7; --mobile-column:0; --mobile-row:18.3">
+          <button type="button" aria-pressed="false">调度分派</button><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a>
+        </div>
+        <div class="dep-node" data-node="compiler" style="--column:2; --row:22.8; --mobile-column:1; --mobile-row:12.6">
+          <button type="button" aria-pressed="false">内核编译</button><a data-preview="compile" href="../src/torch_tilelang/compat/tilelang.py">tilelang.py</a>
+        </div>
+        <div class="dep-node check" data-node="profiler" style="--column:3; --row:3.1; --mobile-column:1; --mobile-row:24.3">
+          <button type="button" aria-pressed="false">设备计时</button><a data-preview="measure" href="../src/torch_tilelang/compat/profiler.py">profiler.py</a>
+        </div>
+        <div class="dep-node check" data-node="errors" style="--column:3; --row:9.3; --mobile-column:1; --mobile-row:30.3">
+          <button type="button" aria-pressed="false">计时异常</button><a data-preview="error" href="../src/torch_tilelang/errors.py">errors.py</a>
+        </div>
+        <div class="dep-node" data-node="elementwise" style="--column:3; --row:15.8; --mobile-column:0; --mobile-row:24.3">
+          <button type="button" aria-pressed="false">逐元素调度</button><a data-preview="elementwise" href="../src/torch_tilelang/schedules/ascend/elementwise.py">elementwise.py</a>
+        </div>
+        <div class="dep-node" data-node="operators" style="--column:3; --row:22.4; --mobile-column:0; --mobile-row:30.3">
+          <button type="button" aria-pressed="false">归约与矩阵乘</button><a data-preview="operators" href="../src/torch_tilelang/schedules/ascend/operators.py">operators.py</a>
+        </div>
+      </div>
+    </div>
+    <p class="dep-note" aria-live="polite"><strong>读图示例</strong><span>backend.py 和 runtime.py 都使用 fusion.py。后端用它校验数值，执行器用它统计内核调用并分析归约。</span></p>
+    <details class="dep-details" open>
+      <summary>查看关键调用及源码</summary>
+      <div class="dep-group" data-from="backend">
+        <h4>后端入口 · <a data-preview="partition" href="../src/torch_tilelang/backend.py">backend.py</a></h4>
+        <ul>
+          <li data-to="config" data-wide="across" data-narrow="across"><a data-preview="config" href="../src/torch_tilelang/config.py">config.py</a><span>用 GraphConfig 读取编译选项。</span></li>
+          <li data-to="frontend" data-wide="across" data-narrow="across"><a data-preview="import" href="../src/torch_tilelang/frontend.py">frontend.py</a><span>用 fx_to_relax 转换可编译分区。</span></li>
+          <li data-to="runtime" data-wide="across" data-narrow="down"><a data-preview="build-runner" href="../src/torch_tilelang/runtime.py">runtime.py</a><span>用 build_runner 创建分区执行器。</span></li>
+          <li data-to="fusion" data-wide="across" data-narrow="over-right" data-check><a data-preview="validate" href="../src/torch_tilelang/fusion.py">fusion.py</a><span>用 validate_runner 对照 PyTorch 校验分区结果。</span></li>
+        </ul>
+      </div>
+      <div class="dep-group" data-from="runtime">
+        <h4>图执行器 · <a data-preview="execute-plan" href="../src/torch_tilelang/runtime.py">runtime.py</a></h4>
+        <ul>
+          <li data-to="schedule" data-wide="across" data-narrow="down"><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a><span>用 schedule_primfunc 为每个 PrimFunc 选择调度。</span></li>
+          <li data-to="compiler" data-wide="across" data-narrow="across"><a data-preview="compile" href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py</a><span>用 compile_kernel 编译调度后的函数。</span></li>
+          <li data-to="fusion" data-wide="across" data-narrow="across" data-check><a data-preview="count" href="../src/torch_tilelang/fusion.py">fusion.py</a><span>用 kernel_count 统计内核调用，并分析归约输出。</span></li>
+        </ul>
+      </div>
+      <div class="dep-group" data-from="schedule">
+        <h4>调度分派 · <a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a></h4>
+        <ul>
+          <li data-to="elementwise" data-wide="across" data-narrow="down"><a data-preview="elementwise" href="../src/torch_tilelang/schedules/ascend/elementwise.py">elementwise.py</a><span>首先尝试逐元素调度。</span></li>
+          <li data-to="operators" data-wide="across" data-narrow="left-rail"><a data-preview="operators" href="../src/torch_tilelang/schedules/ascend/operators.py">operators.py</a><span>随后尝试末轴归约和二维 GEMM。</span></li>
+        </ul>
+      </div>
+      <div class="dep-group" data-from="fusion">
+        <h4>数值校验与融合 · <a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py</a></h4>
+        <ul>
+          <li data-to="profiler" data-wide="across" data-narrow="down" data-check><a data-preview="measure" href="../src/torch_tilelang/compat/profiler.py">compat/profiler.py</a><span>比较基线与融合候选的设备耗时和端到端耗时。</span></li>
+          <li data-to="errors" data-wide="across" data-narrow="right-rail" data-check><a data-preview="error" href="../src/torch_tilelang/errors.py">errors.py</a><span>捕获 MeasurementUnavailableError，保留基线。</span></li>
+        </ul>
+      </div>
+      <div class="dep-group" data-from="profiler">
+        <h4>设备计时 · <a data-preview="measure" href="../src/torch_tilelang/compat/profiler.py">compat/profiler.py</a></h4>
+        <ul>
+          <li data-to="errors" data-wide="down" data-narrow="down" data-check><a data-preview="error" href="../src/torch_tilelang/errors.py">errors.py</a><span>用 MeasurementUnavailableError 表示无法取得计时样本。</span></li>
+        </ul>
+      </div>
+    </details>
   </div>
-  <div class="mod-browser">
-    <fieldset class="mod-switcher">
-      <legend class="mod-sr">选择调用方模块</legend>
-      <input class="mod-radio" type="radio" id="mod-backend" name="mod-caller" aria-controls="mod-view-backend" checked><label class="mod-tab" for="mod-backend">backend.py</label>
-      <input class="mod-radio" type="radio" id="mod-runtime" name="mod-caller" aria-controls="mod-view-runtime"><label class="mod-tab" for="mod-runtime">runtime.py</label>
-      <input class="mod-radio" type="radio" id="mod-schedule" name="mod-caller" aria-controls="mod-view-schedule"><label class="mod-tab" for="mod-schedule">schedule.py</label>
-      <input class="mod-radio" type="radio" id="mod-fusion" name="mod-caller" aria-controls="mod-view-fusion"><label class="mod-tab" for="mod-fusion">fusion.py</label>
-      <div id="mod-view-backend" class="mod-view view-backend">
-        <div class="mod-source"><small>Dynamo 后端</small><h3><a data-preview="partition" href="../src/torch_tilelang/backend.py">backend.py</a></h3><p>划分 FX 图，编译并校验可执行分区。</p></div>
-        <ul class="mod-targets" aria-label="backend.py 使用的模块">
-          <li><div class="mod-target"><a data-preview="config" href="../src/torch_tilelang/config.py">config.py</a><p><code>GraphConfig</code> 收集后端选项。</p></div></li>
-          <li><div class="mod-target"><a data-preview="import" href="../src/torch_tilelang/frontend.py">frontend.py</a><p><code>fx_to_relax</code> 把受支持的 FX 分区转换成 Relax IR。</p></div></li>
-          <li><div class="mod-target"><a data-preview="build-runner" href="../src/torch_tilelang/runtime.py">runtime.py</a><p><code>build_runner</code> 创建分区执行器。</p></div></li>
-          <li><div class="mod-target"><a data-preview="validate" href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>validate_runner</code> 将基线执行结果与 PyTorch 对照。</p></div></li>
-        </ul>
-      </div>
-      <div id="mod-view-runtime" class="mod-view view-runtime">
-        <div class="mod-source"><small>图执行器</small><h3><a data-preview="execute-plan" href="../src/torch_tilelang/runtime.py">runtime.py</a></h3><p>编译 PrimFunc，按执行计划分配张量、启动内核。</p></div>
-        <ul class="mod-targets" aria-label="runtime.py 使用的模块">
-          <li><div class="mod-target"><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a><p><code>schedule_primfunc</code> 选择 Ascend 调度规则。</p></div></li>
-          <li><div class="mod-target"><a data-preview="compile" href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py</a><p><code>compile_kernel</code> 调用 TileLang 编译已调度的函数。</p></div></li>
-          <li><div class="mod-target"><a data-preview="count" href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>kernel_count</code> 统计图中的内核调用点。</p></div></li>
-        </ul>
-      </div>
-      <div id="mod-view-schedule" class="mod-view view-schedule">
-        <div class="mod-source"><small>调度分派</small><h3><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a></h3><p>先尝试逐元素调度，再依次尝试归约和矩阵乘。</p></div>
-        <ul class="mod-targets" aria-label="schedule.py 使用的模块">
-          <li><div class="mod-target"><a data-preview="elementwise" href="../src/torch_tilelang/schedules/ascend/elementwise.py">elementwise.py</a><p><code>schedule_elementwise</code> 为逐元素运算生成 Ascend 调度。</p></div></li>
-          <li><div class="mod-target"><a data-preview="operators" href="../src/torch_tilelang/schedules/ascend/operators.py">operators.py</a><p><code>try_schedule_reduction</code> 匹配末轴归约。同文件的 <code>try_schedule_gemm</code> 匹配二维 GEMM。</p></div></li>
-        </ul>
-      </div>
-      <div id="mod-view-fusion" class="mod-view view-fusion">
-        <div class="mod-source"><small>融合选择</small><h3><a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py</a></h3><p>对照 PyTorch 校验候选执行器，再测量设备耗时和端到端耗时。</p></div>
-        <ul class="mod-targets" aria-label="fusion.py 使用的模块">
-          <li><div class="mod-target"><a data-preview="measure" href="../src/torch_tilelang/compat/profiler.py">compat/profiler.py</a><p><code>measure</code> 为基线和融合候选采集计时样本。</p></div></li>
-          <li><div class="mod-target"><a data-preview="error" href="../src/torch_tilelang/errors.py">errors.py</a><p><code>MeasurementUnavailableError</code> 标识计时不可用，此时保留基线方案。</p></div></li>
-        </ul>
-      </div>
-    </fieldset>
-  </div>
+  <script>
+    (() => {
+      const section = document.getElementById('modules');
+      const graph = section.querySelector('.dep-graph');
+      const plot = section.querySelector('.dep-plot');
+      const wires = section.querySelector('.dep-wires');
+      const filter = section.querySelector('#dep-focus');
+      const details = section.querySelector('.dep-details');
+      const note = section.querySelector('.dep-note span');
+      const defaultNote = note.textContent;
+      const nodes = new Map([...plot.querySelectorAll('[data-node]')].map(node => [node.dataset.node, node]));
+      const groups = [...details.querySelectorAll('[data-from]')];
+      const edges = [];
+      const narrow = matchMedia('(max-width: 760px)');
+
+      // The source-linked call list also supplies the edges for the diagram.
+      for (const group of groups) {
+        for (const row of group.querySelectorAll('[data-to]')) {
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          const check = row.hasAttribute('data-check');
+          path.setAttribute('class', check ? 'dep-edge check' : 'dep-edge');
+          path.setAttribute('marker-end', check ? 'url(#dep-check-arrow)' : 'url(#dep-arrow)');
+          wires.appendChild(path);
+          edges.push({ from: group.dataset.from, to: row.dataset.to, row, path });
+        }
+      }
+
+      function drawEdges() {
+        const box = plot.getBoundingClientRect();
+        if (!box.width) return;
+        const ports = new Map();
+        for (const [key, node] of nodes) {
+          const rect = node.getBoundingClientRect();
+          const x = rect.left - box.left;
+          const y = rect.top - box.top;
+          ports.set(key, { left: x, right: x + rect.width, top: y, bottom: y + rect.height,
+            cx: x + rect.width / 2, cy: y + rect.height / 2 });
+        }
+        for (const { from, to, row, path } of edges) {
+          const a = ports.get(from);
+          const b = ports.get(to);
+          const route = narrow.matches ? row.dataset.narrow : row.dataset.wide;
+          const rail = box.width * .98;
+          let d;
+          if (route === 'down') {
+            d = `M ${a.cx} ${a.bottom} V ${b.top}`;
+          } else if (route === 'over-right') {
+            d = `M ${a.cx} ${a.top} V ${a.top / 2} H ${rail} V ${b.cy - 6} H ${b.right}`;
+          } else if (route === 'right-rail') {
+            d = `M ${a.right} ${a.cy + 6} H ${rail} V ${b.cy} H ${b.right}`;
+          } else if (route === 'left-rail') {
+            d = `M ${a.left} ${a.cy} H ${box.width * .02} V ${b.cy} H ${b.left}`;
+          } else {
+            // Stagger incoming and outgoing ports so shared dependencies keep distinct arrowheads.
+            const offset = Math.max(-8, Math.min(8, (b.cy - a.cy) / 3));
+            const mid = (a.right + b.left) / 2;
+            d = `M ${a.right} ${a.cy + offset} C ${mid} ${a.cy + offset}, ${mid} ${b.cy - offset}, ${b.left} ${b.cy - offset}`;
+          }
+          path.setAttribute('d', d);
+        }
+      }
+
+      function filename(key) { return nodes.get(key).querySelector('a').textContent; }
+
+      function focusModule(key) {
+        const related = new Set([key]);
+        const callers = [];
+        const dependencies = [];
+        for (const edge of edges) {
+          const touches = edge.from === key || edge.to === key;
+          if (edge.from === key) dependencies.push(filename(edge.to));
+          if (edge.to === key) callers.push(filename(edge.from));
+          if (touches) { related.add(edge.from); related.add(edge.to); }
+          edge.path.classList.toggle('near', touches);
+          edge.path.classList.toggle('far', Boolean(key) && !touches);
+          edge.row.hidden = Boolean(key) && !touches;
+        }
+        for (const group of groups) group.hidden = !group.querySelector('li:not([hidden])');
+        for (const [id, node] of nodes) {
+          node.classList.toggle('picked', id === key);
+          node.classList.toggle('near', Boolean(key) && related.has(id));
+          node.classList.toggle('far', Boolean(key) && !related.has(id));
+          node.querySelector('button').setAttribute('aria-pressed', String(id === key));
+        }
+        filter.value = key;
+        section.querySelector('.dep-note strong').textContent = key ? filename(key) : '读图示例';
+        const info = [];
+        if (callers.length) info.push('由 ' + callers.join('、') + ' 使用');
+        if (dependencies.length) info.push('直接依赖 ' + dependencies.join('、'));
+        note.textContent = key ? info.join('；') + '。' : defaultNote;
+        details.querySelector('summary').textContent = key ? '查看相关调用及源码' : '查看关键调用及源码';
+      }
+
+      for (const [key, node] of nodes) {
+        const button = node.querySelector('button');
+        filter.add(new Option(filename(key), key));
+        button.addEventListener('click', () => focusModule(filter.value === key ? '' : key));
+      }
+      filter.addEventListener('change', () => focusModule(filter.value));
+      graph.hidden = false;
+      section.querySelector('.dep-filter').hidden = false;
+      details.open = false;
+      drawEdges();
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(drawEdges).observe(plot);
+      window.addEventListener('resize', drawEdges);
+    })();
+  </script>
+
 </section>
     <section id="example" class="content-section" aria-labelledby="example-title">
       <div class="section-heading">
