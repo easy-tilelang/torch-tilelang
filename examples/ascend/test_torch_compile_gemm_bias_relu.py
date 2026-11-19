@@ -1,8 +1,4 @@
-"""Check a parameterized 2-D GEMM + bias + ReLU module through torch.compile.
-
-Run directly or with pytest; --device, --dtype and --seed are optional:
-    python examples/ascend/test_torch_compile_gemm_bias_relu.py
-"""
+"""Check a parameterized 2-D GEMM + bias + ReLU module through torch.compile."""
 
 import sys
 

@@ -285,8 +285,7 @@ def test_graph_gemm_pipeline_and_tile_epochs_numerics(target, execution_backend)
     expected = torch.relu((a.float() @ b.float()).to(torch.bfloat16) + bias)
     actual = compiled(a, b, bias)
     torch.testing.assert_close(actual, expected, rtol=2e-2, atol=2e-2)
-    # Retaining the previous result also covers output/epoch reuse on a second
-    # launch with changed inputs and fresh callee-allocated output storage.
+    # Hold the first output across another launch to detect accidental reuse of its storage.
     previous = actual.clone()
     again = compiled(a * 2, b, bias)
     torch.testing.assert_close(actual, previous, rtol=0, atol=0)

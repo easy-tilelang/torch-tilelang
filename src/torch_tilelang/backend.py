@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PartitionReport:
-    """Observable compilation status; eager fallback is never counted as a kernel."""
+    """Record the selected runner's kernel count and cumulative call counts."""
 
     name: str
     compiled: bool = False

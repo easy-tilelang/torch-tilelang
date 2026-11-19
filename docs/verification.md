@@ -1,27 +1,34 @@
 # Verification
 
-Run the commands below from the repository root with the package and its test
-dependencies installed. Use a TileLang build with Ascend code generation and
-the bundled TVM/Relax. Device execution also requires a compatible Torch,
-torch_npu and CANN installation. PTO execution additionally requires PTODSL,
-ptoas and Bisheng. [Compiler and runtime requirements](compatibility.md)
+Run the pytest and hardware checks from the repository root with the package
+and its test dependencies installed. Even the compiler checks on a CPU host
+need an Ascend-enabled TileLang build and its bundled TVM/Relax.
+[Compiler and runtime requirements](compatibility.md)
 
 ## Checks without an NPU
 
 ```bash
+python -m ruff check src tests examples scripts
 python -m pytest tests/unit -q -ra
 python -m pytest tests/ascend -q -ra -m "not ascend and not pto"
 ```
 
 The unit tests exercise FX conversion, Relax legalization and Torch-owned
-tensor execution using CPU kernels. The second command checks scheduling and
+tensor execution using CPU kernels. The Ascend tests above check scheduling and
 AscendC source generation. To check PTO source generation, use
-`-m "pto and not ascend"` on the same directory. Collection under
-`tests/ascend` requires an Ascend-enabled TileLang build.
+`-m "pto and not ascend"` on the same directory.
 
-To check a packaged wheel, install it in a separate environment with the same
-compiler dependencies and run `scripts/check_installed.py` from outside the
-checkout. It checks fresh-process backend discovery and CPU fallback.
+Build a wheel with the build dependencies from `pyproject.toml` installed.
+
+```bash
+python -m pip wheel . --no-deps --no-build-isolation
+```
+
+Install the wheel in a separate environment with the same compiler dependencies
+and run `scripts/check_installed.py` by absolute path from outside the
+checkout. It checks fresh-process backend discovery, CPU fallback, and that
+the installed TileLang has neither legacy graph module (`tilelang.graph` or
+`tilelang.ascend.graph`).
 [Wheel smoke test](../scripts/check_installed.py)
 
 ## Hardware workflows
@@ -35,11 +42,14 @@ checkout. It checks fresh-process backend discovery and CPU fallback.
 
 The driver uses `npu-smi` to select an idle, healthy device within
 `ASCEND_RT_VISIBLE_DEVICES`, or among discovered devices if the variable is
-unset. Child processes see the selected device as `npu:0`. To select a card
-explicitly, check that it is available and pass its physical ID with
-`--physical-device`. Each invocation writes artifacts to a new directory beside
-the checkout by default. Use `--output` to choose a directory outside the
-checkout. [Hardware verification driver](../scripts/verify_npu.py)
+unset. Passing `--physical-device` selects that physical ID directly within
+the allocation and bypasses automatic availability checks. Child processes
+see the selected card as `npu:0`. The driver clears `TILELANG_DEFAULT_TARGET`
+in those processes and selects PTO explicitly for the PTO stages.
+
+By default, each invocation creates a unique result directory under
+`<checkout-name>-artifacts/` beside the checkout. Pass `--output` to choose
+another directory outside the checkout. [Hardware verification driver](../scripts/verify_npu.py)
 
 ## Reading a result
 
@@ -69,5 +79,5 @@ reflects AscendC. Use `--stage pto` when PTO must determine the exit code.
   values below one favoring the fused variant. For GEMM the former includes
   both fusion and epilogue scheduling. [Benchmark variants](../scripts/benchmark_graph.py)
 
-Use the generated environment metadata and raw samples when publishing a
-compatibility finding or performance comparison in an issue, PR or release note.
+`environment.json` records the Torch and TileLang versions, toolchain,
+resolved backends and hashes of the loaded native libraries for that run.

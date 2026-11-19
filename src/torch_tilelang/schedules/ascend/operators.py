@@ -1,8 +1,8 @@
 """Conservative Ascend schedules for canonical graph reductions and GEMMs.
 
-These rules consume unscheduled TIR produced by Relax legalization.  Pattern
-recognition proves the indexing contract before replacing loops with Ascend
-tile operations; an unmatched function is left to the graph fallback path.
+These rules match index expressions in unscheduled TIR from Relax legalization
+before replacing loops with Ascend tile operations. An unmatched pattern
+returns None to the schedule selector.
 """
 
 import math
@@ -190,13 +190,10 @@ def _settings(config, rows):
 
 
 def try_schedule_reduction(func, config=None):
-    """Schedule one canonical last-axis sum/max, optionally followed by mean.
+    """Schedule a last-axis sum, mean, or maximum with fp32 accumulation.
 
-    Input and output may have arbitrary static ranks, but the reduction must
-    cover the complete last axis and leave every preceding axis unchanged.
-    Float16 and bfloat16 inputs are accumulated in float32. Max also tracks
-    NaNs and all-negative-infinity rows explicitly instead of relying on
-    target-specific physical identities and NaN handling.
+    Mean is recognized as a sum scaled by the reciprocal of the axis length.
+    Max tracks NaNs and all-negative-infinity rows explicitly.
     """
     prepared = _prepare(func)
     if prepared is None:
@@ -374,10 +371,9 @@ class _Epilogue(tirx.PyStmtExprMutator):
 def try_schedule_gemm(func, config=None):
     """Schedule a canonical 2-D GEMM and a local bias/relu/cast epilogue.
 
-    Both logical NN and NT right operands are supported. NN is explicitly
-    transposed by GM-to-L1 dn2nz, then the existing L1 NT GEMM lowering is used.
-    Tiles are full, aligned rectangles; nonaligned shapes are not padded by
-    this rule and must use the graph fallback.
+    The GM-to-L1 copy transposes the logical NN right operand. Both NN and NT
+    then use the same L1 GEMM. M, N and K must be multiples of 16 so that every
+    tile is full.
     """
     prepared = _prepare(func)
     if prepared is None:

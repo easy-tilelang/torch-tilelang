@@ -1,8 +1,4 @@
-"""Check a parameterized Bias + ReLU + Scale module through torch.compile.
-
-Run directly or with pytest; --device, --dtype and --seed are optional:
-    python examples/ascend/test_torch_compile_elementwise.py
-"""
+"""Check a parameterized Bias + ReLU + Scale module through torch.compile."""
 
 import sys
 

@@ -1,8 +1,4 @@
-"""Run Torch compilation and separate retiling from graph fusion performance.
-
-Example:
-    python scripts/benchmark_graph.py --bench --output /tmp/ascend-graph.json
-"""
+"""Validate unfused and fused TileLang graphs and optionally benchmark them against eager Torch."""
 
 from __future__ import annotations
 

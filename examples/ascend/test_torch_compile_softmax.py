@@ -1,8 +1,4 @@
-"""Check last-axis Softmax through the installed torch.compile backend.
-
-Run directly or with pytest; --device, --dtype and --seed are optional:
-    python examples/ascend/test_torch_compile_softmax.py
-"""
+"""Check last-axis Softmax through the installed torch.compile backend."""
 
 import sys
 

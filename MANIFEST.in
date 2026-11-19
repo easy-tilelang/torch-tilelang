@@ -1,6 +1,6 @@
 include LICENSE README.md
 recursive-include docs *.md
-recursive-include constraints *.md *.txt
+recursive-include constraints *.txt
 recursive-include examples *.py
 recursive-include tests *.py
 recursive-include scripts *.py

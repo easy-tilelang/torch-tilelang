@@ -1,13 +1,4 @@
-"""Run reproducible AscendC acceptance checks and an independent PTO audit.
-
-Example:
-    python scripts/verify_npu.py
-
-By default, select the first idle, healthy device in the inherited allocation
-and create a unique directory beside the checkout under torch-tilelang-artifacts.
-Explicit options override these defaults. The script does not reserve/reset
-devices, change toolchains, or stop other processes. Run stages serially.
-"""
+"""Run AscendC or PTO verification stages on one NPU and write their reports."""
 
 from __future__ import annotations
 
@@ -47,7 +38,7 @@ def capture(command, cwd=ROOT):
 
 
 def select_device(requested, allocated):
-    """Choose only a confirmed idle, healthy device inside the allocation."""
+    """Honor an explicit device within the allocation or find an idle, healthy one."""
     allowed = None
     if allocated is not None:
         try:
@@ -399,8 +390,6 @@ def main():
     python = sys.executable
     records = []
     reports = {}
-    # Record metadata for partial invocations too; every artifact can identify
-    # its Python package, compiler revision and actual loaded native libraries.
     environment(output, args.physical_device)
 
     def selected(stage):
@@ -463,8 +452,7 @@ def main():
     report = {"recorded_at": now(), "stage": args.stage, "environment": "environment.json", "backends": reports}
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     (output / f"{args.stage}-commands.json").write_text(json.dumps(records, indent=2) + "\n")
-    # Optional PTO does not change the AscendC exit status. Timing availability
-    # is reported independently; noisy comparisons never become speedups.
+    # With --include-pto, the exit status still follows the AscendC workflow.
     required = records if args.stage.startswith("pto") else [r for r in records if not r["name"].startswith("pto-")]
     sys.exit(int(any(not command_passed(r) for r in required)))
 
