@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="torch-tilelang 中文项目导览。通过项目全景图、编译流程和源码依赖，了解 PyTorch 推理图如何在 Ascend NPU 上执行。">
+  <title>项目架构导览 · torch-tilelang</title>
+  <style>
+    :root {
+      --ink: #172a29;
+      --muted: #506661;
+      --teal: #126856;
+      --line: #d4dfd9;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --paper: #f7f8f5;
+      --mint: #abf2cd;
+      --gold: #f1c57e;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 90px; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 1rem/1.65 "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+    a { color: var(--teal); text-underline-offset: .22em; }
+    button { font: inherit; }
+    :focus-visible { outline: 3px solid #d1881b; outline-offset: 3px; }
+    h1, h2, h3, p, figure { margin: 0; }
+    code, pre { font-family: var(--mono); }
+    .wrap { width: min(1240px, 90%); margin-inline: auto; }
+    .icon, .section-icon { width: 1.2rem; height: 1.2rem; flex: none; }
+    .sprites { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .skip { position: fixed; left: 1rem; top: -5rem; z-index: 20; background: white; padding: .5rem 1rem; }
+    .skip:focus { top: .5rem; }
+    .topbar { position: sticky; top: 0; z-index: 5; background: #fcfdfa; border-bottom: 1px solid var(--line); }
+    .topbar-inner, .brand, .topbar nav, .hero-actions, .section-heading h2, .map-key, .map-top, .node-title, .source-link, .scope, .trace-shapes { display: flex; align-items: center; }
+    .topbar-inner { justify-content: space-between; min-height: 65px; gap: 1.5rem; }
+    .brand { gap: .65rem; color: var(--ink); text-decoration: none; font-size: 1.14rem; font-weight: 750; letter-spacing: -.04em; white-space: nowrap; }
+    .brand svg { width: 2rem; height: 2rem; }
+    .brand small { border-left: 1px solid var(--line); margin-left: .35rem; padding-left: .9rem; color: var(--muted); font-size: .88rem; letter-spacing: .07em; font-weight: 500; }
+    .topbar nav { align-self: stretch; gap: clamp(1.4rem, 3vw, 2.85rem); }
+    .topbar nav a { display: grid; align-items: center; text-decoration: none; color: var(--muted); font-size: .94rem; border-bottom: 3px solid transparent; padding-top: 3px; white-space: nowrap; }
+    .topbar nav a:hover, .topbar nav a[aria-current] { color: var(--teal); border-bottom-color: var(--teal); }
+    .hero { overflow: hidden; color: #f6fbf6; background-color: #123c37; background-image: radial-gradient(ellipse at 78% 0%, #27645673, transparent 65%), linear-gradient(#a7ecc707 1px, transparent 1px), linear-gradient(90deg,#a7ecc707 1px,transparent 1px); background-size: auto, 36px 36px, 36px 36px; }
+    .hero-inner { display: grid; grid-template-columns: 1.05fr 1fr; align-items: center; gap: 2rem; padding-block: clamp(1.9rem, 3.4vw, 3.25rem); }
+    .hero-copy { position: relative; z-index: 1; }
+    .breadcrumb { display: flex; align-items: center; gap: .7rem; color: #d0ebe1; font-size: .875rem; margin-bottom: 1rem; }
+    .breadcrumb a { color: inherit; text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb span[aria-hidden] { opacity: .65; }
+    .hero h1 { font-size: clamp(2.48rem, 3.7vw, 3.65rem); line-height: 1.18; font-weight: 720; letter-spacing: -.045em; }
+    .hero h1 span { color: var(--mint); }
+    .hero-copy > p { margin-top: 1.05rem; color: #daebe4; max-width: 34em; }
+    .hero-actions { gap: .8rem; margin-top: 1.45rem; flex-wrap: wrap; }
+    .hero-actions a { display: inline-flex; align-items: center; gap: .55rem; padding: .48rem .91rem; border: 1px solid #81a89b; border-radius: 7px; color: #f3fbf7; font-size: .92rem; font-weight: 600; text-decoration: none; }
+    .hero-actions a:first-child { background: var(--mint); border-color: var(--mint); color: #123c34; }
+    .hero-actions a:hover { border-color: white; box-shadow: 0 0 0 1px #daffea; }
+    .hero-diagram { width: 100%; max-height: 340px; display: block; }
+    .content-section { padding: clamp(2.2rem, 4.2vw, 3.7rem) 0 0; }
+    .section-heading { margin-bottom: 1.25rem; }
+    .section-heading h2 { gap: .68rem; font-size: clamp(1.48rem, 2.25vw, 2rem); letter-spacing: -.045em; line-height: 1.3; }
+    .section-icon { color: var(--teal); width: 1.4rem; height: 1.4rem; }
+    .section-heading p { color: var(--muted); margin-top: .4rem; }
+    .map { border: 1px solid #c8d6ce; border-radius: 13px; overflow: hidden; background: white; }
+    .map-top { justify-content: space-between; gap: .5rem 1rem; padding: .73rem 1.35rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .map-top strong { font-weight: 650; font-size: .93rem; display: flex; align-items: center; gap: .55rem; }
+    .map-key { color: var(--muted); font-size: .84rem; gap: 1.1rem; }
+    .map-key span { display: inline-flex; align-items: center; gap: .38rem; }
+    .map-key i { height: .7rem; width: .7rem; border: 1px solid #92ad9f; border-radius: 2px; background: #fff; }
+    .map-key span:first-child i { border-color: #508474; background: #d9efe4; }
+    .map-canvas { background-color: #fcfdfa; background-image: radial-gradient(#bfd0c480 .8px,transparent .8px); background-size: 13px 13px; padding: clamp(1rem, 2.3vw, 2rem); display: grid; grid-template-columns: minmax(0,.95fr) 4% minmax(0,1.88fr) 4% minmax(0,1.04fr); align-items: center; }
+    .map-node { border: 1px solid #b8cabe; border-radius: 9px; background: white; padding: 1rem; min-width: 0; }
+    .node-title { gap: .62rem; }
+    .node-title > svg { flex: none; width: 1.55rem; height: 1.55rem; color: var(--teal); }
+    .map-node h3 { font-size: 1.14rem; line-height: 1.3; }
+    .map-node p { color: var(--muted); margin-top: .65rem; line-height: 1.55; }
+    .map-node.external p, .target-pairs { font-size: .94rem; }
+    .map-node .map-tag { display: inline-block; margin-top: .65rem; padding: .15rem .5rem; border-radius: 4px; background: #f2f5f1; font: .84rem/1.5 var(--mono); }
+    .wire { width: 100%; position: relative; border-top: 1.5px solid #689987; }
+    .wire::after { content: ""; position: absolute; right: 1px; top: -4px; width: 6px; height: 6px; border: solid #548b76; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); }
+    .internal { background: #e7f4eb; border-color: #88af9d; }
+    .internal .node-title { justify-content: space-between; gap: .4rem; }
+    .internal .node-title small { color: var(--teal); font-size: .84rem; font-weight: 600; }
+    .map-parts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .45rem; margin-top: .8rem; }
+    .map-parts a { display: block; color: var(--ink); padding: .45rem .65rem; background: #fcfefb; border: 1px solid #c0dacb; border-radius: 5px; text-decoration: none; }
+    .map-parts a:hover { border-color: var(--teal); }
+    .map-parts strong, .map-parts code { display: block; }
+    .map-parts strong { font-size: .94rem; }
+    .map-parts code { font-size: .8rem; color: var(--muted); }
+    .target-pairs { margin-block: .6rem; }
+    .target-pairs div { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: .4rem; }
+    .target-pairs code { font-size: .83rem; color: var(--muted); }
+    .chip-target { display: flex; align-items: center; gap: .45rem; border-top: 1px solid #dcded1; padding-top: .55rem; color: #806024; font-weight: 600; font-size: .93rem; }
+    .scope { gap: .6rem 1.3rem; flex-wrap: wrap; padding: .75rem 1.35rem; font-size: .89rem; border-top: 1px solid var(--line); background: #fafbf8; color: var(--muted); }
+    .scope strong { color: var(--teal); }
+    .scope code { font-size: .86rem; }
+    .example-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; background: white; }
+    .code-window { min-width: 0; color: #e6f2ed; background: #173d37; }
+    .code-title { display: flex; align-items: center; gap: .6rem; padding: .8rem 1.25rem; border-bottom: 1px solid #517066; color: #c5e3d5; font: .89rem/1.5 var(--mono); }
+    .code-window pre { margin: 0; padding: 1.15rem 1.25rem; line-height: 1.8; font-size: .94rem; overflow-x: auto; }
+    .tok-kw { color: #f0c385; }
+    .tok-fn { color: #b5efd1; }
+    .tok-str { color: #ffe1a5; }
+    .trace { padding: 1.3rem 1.5rem; }
+    .trace h3 { font-size: 1.13rem; }
+    .trace-shapes { gap: .5rem; margin: .6rem 0; flex-wrap: wrap; }
+    .trace-shapes code { font-size: .9rem; padding: .15rem .5rem; border-radius: 4px; background: #edf5ef; color: var(--teal); }
+    .trace p { color: var(--muted); margin-block: .65rem; }
+    .source-link { gap: .4rem; width: fit-content; font-weight: 600; font-size: .92rem; }
+    .related { display: flex; align-items: baseline; gap: .65rem 1.5rem; flex-wrap: wrap; padding-block: 1.15rem; }
+    .related a { font-size: .94rem; }
+    .page-footer { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .5rem 1rem; margin-top: 2rem; border-top: 1px solid var(--line); padding-block: 1.3rem 1.7rem; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 900px) {
+      .wrap { width: 92%; }
+      .hero-inner { gap: .6rem; }
+      .brand small { display: none; }
+      .map-canvas { grid-template-columns: minmax(0,.9fr) 3% minmax(0,1.45fr) 3% minmax(0,.95fr); }
+      .map-node { padding: .8rem; }
+      .map-parts a { padding-inline: .4rem; }
+    }
+    @media (max-width: 700px) {
+      html { scroll-padding-top: 105px; }
+      .topbar-inner { flex-wrap: wrap; gap: 0; padding-top: .4rem; }
+      .brand { font-size: 1.03rem; }
+      .brand svg { width: 1.65rem; height: 1.65rem; }
+      .brand small { display: inline; }
+      .topbar nav { width: 100%; justify-content: space-between; gap: .3rem; }
+      .topbar nav a { padding: .45rem .2rem .32rem; }
+      .hero-inner { grid-template-columns: 1fr; padding-block: 1.8rem .8rem; }
+      .hero h1 { font-size: clamp(2.5rem, 8vw, 3.1rem); }
+      .hero-diagram { max-height: 235px; }
+      .map-canvas { grid-template-columns: 1fr; }
+      .map-node { padding: .85rem 1rem; }
+      .wire { width: 0; height: 20px; border: 0; border-left: 1.5px solid #689987; justify-self: center; }
+      .wire::after { top: auto; bottom: 2px; right: -2.7px; transform: rotate(135deg); }
+      .example-layout { grid-template-columns: 1fr; }
+      .scope, .map-top { padding-inline: 1rem; }
+      .scope { gap: .3rem .85rem; }
+    }
+    @media print {
+      .topbar { position: static; }
+      .topbar nav, .hero-actions, .skip { display: none; }
+      .wrap { width: 96%; }
+      .hero { print-color-adjust: exact; }
+      .hero-diagram { max-height: 200px; }
+      .content-section { padding-top: 1.5rem; }
+      .map, .example-layout { break-inside: avoid; }
+    }
+
+    #pipeline .flow-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    #pipeline .flow-steps { display: flex; gap: 24px; padding: 20px; margin: 0; background: #f7f8f5; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    #pipeline .flow-step { position: relative; flex: 1 0 0; min-width: 90px; display: grid; align-content: center; gap: 4px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-decoration: none; color: var(--ink); }
+    #pipeline .flow-step:not(:last-child)::after { content: "→"; color: #758980; position: absolute; left: calc(100% + 1px); width: 22px; text-align: center; top: 50%; transform: translateY(-50%); font: 16px/1 var(--mono); }
+    #pipeline .flow-step small { color: var(--muted); font: .8rem/1.4 var(--mono); }
+    #pipeline .flow-step b { font-size: 15px; line-height: 1.5; font-weight: 650; white-space: nowrap; }
+    #pipeline .flow-step:hover { border-color: #76a395; }
+    #pipeline .flow-step[aria-selected="true"] { border-color: #126856; color: #fff; background: #126856; }
+    #pipeline .flow-step[aria-selected="true"] small { color: #d4f1e6; }
+    #pipeline :is(.flow-step, .flow-panel, .flow-sources a):focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+    #pipeline .flow-panel { padding: clamp(18px, 3vw, 30px); scroll-margin-top: 90px; }
+    #pipeline .flow-panel + .flow-panel { border-top: 1px solid var(--line); }
+    #pipeline .flow-ready .flow-panel { border-top: 0; }
+    #pipeline .flow-panel[hidden] { display: none; }
+    #pipeline .flow-panel h3 { margin: 0 0 10px; color: var(--ink); font-size: clamp(19px, 2vw, 23px); line-height: 1.4; }
+    #pipeline .flow-panel p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.75; overflow-wrap: anywhere; }
+    #pipeline .flow-panel code { font: .87em/1.5 var(--mono); color: var(--ink); }
+    #pipeline .flow-io { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 18px 0; gap: 12px; }
+    #pipeline .flow-io > div { border-left: 2px solid #c6ddcf; padding-left: 10px; }
+    #pipeline .flow-io dt { color: var(--muted); font-size: 12px; line-height: 1.6; }
+    #pipeline .flow-io dd { margin: 2px 0 0; color: var(--ink); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+    #pipeline .flow-panel .flow-edge { padding: 10px 12px; border-left: 2px solid #d6b767; background: #faf8f0; color: #534c39; font-size: 14px; }
+    #pipeline .flow-sources { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 15px; margin-top: 16px; color: var(--muted); font-size: 13px; }
+    #pipeline .flow-sources a { color: var(--teal); font: 13px/1.6 var(--mono); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+    @media (max-width: 680px) {
+      #pipeline .flow-steps { gap: 19px; padding: 14px; }
+      #pipeline .flow-step { flex: 0 0 auto; min-width: 85px; padding: 7px 9px; }
+      #pipeline .flow-step:not(:last-child)::after { width: 17px; }
+      #pipeline .flow-io { grid-template-columns: 1fr; }
+    }
+    @media print {
+      #pipeline .flow-panel[hidden] { display: block; }
+      #pipeline .flow-steps { display: none; }
+      #pipeline .flow-panel { break-inside: avoid; }
+    }
+
+    #modules .mod-browser { container-type:inline-size; border:1px solid var(--line,#dbe2db); border-radius:12px; background:white; overflow:hidden; }
+    #modules .mod-switcher { min-inline-size:0; margin:0; padding:0; border:0; font-size:0; }
+    #modules .mod-sr, #modules .mod-radio {
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+      clip-path:inset(50%); white-space:nowrap; border:0;
+    }
+    #modules .mod-tab {
+      display:inline-flex; box-sizing:border-box; justify-content:center; align-items:center; width:25%; min-height:48px;
+      border-bottom:1px solid var(--line,#dbe2db); background:#f7f8f5; color:var(--muted,#58695e);
+      cursor:pointer; font:500 .84rem/1.2 var(--mono,monospace);
+    }
+    #modules .mod-tab:hover { color:var(--teal,#126856); background:#edf3ed; }
+    #modules .mod-radio:checked + .mod-tab { color:var(--teal,#126856); background:white; font-weight:700; box-shadow:inset 0 -3px var(--teal,#126856); }
+    #modules .mod-radio:focus-visible + .mod-tab { outline:2px solid #126856; outline-offset:-4px; }
+    #modules .mod-view { display:none; grid-template-columns:minmax(0,.75fr) minmax(0,1.35fr); align-items:center; gap:40px; padding:clamp(18px,3.5%,36px); font-size:1rem; }
+    #mod-backend:checked ~ .view-backend, #mod-runtime:checked ~ .view-runtime,
+    #mod-schedule:checked ~ .view-schedule, #mod-fusion:checked ~ .view-fusion { display:grid; }
+    #modules .mod-source, #modules .mod-target { box-sizing:border-box; position:relative; min-width:0; }
+    #modules .mod-source { padding:18px; background:#eaf4ee; border:1px solid #b6d3c2; border-radius:10px; }
+    #modules .mod-source::after { content:""; position:absolute; left:100%; top:50%; width:21px; border-top:1px solid #a8c4b4; }
+    #modules .mod-source h3 { margin:5px 0 6px; font:600 1.06rem/1.45 var(--mono,monospace); }
+    #modules .mod-source small { color:var(--teal,#126856); font-size:.78rem; font-weight:650; }
+    #modules .mod-source p, #modules .mod-target p { margin:4px 0 0; color:var(--muted,#53685e); font-size:1rem; line-height:1.55; }
+    #modules .mod-targets { list-style:none; padding:0; margin:0; }
+    #modules .mod-targets li { position:relative; list-style:none; margin:0; padding:5px 0; }
+    #modules .mod-targets li::before { content:""; position:absolute; top:0; bottom:0; left:-20px; border-left:1px solid #a8c4b4; }
+    #modules .mod-targets li:first-child::before { top:50%; }
+    #modules .mod-targets li:last-child::before { bottom:50%; }
+    #modules .mod-targets li::after { content:""; position:absolute; left:-20px; width:16px; top:50%; border-top:1px solid #a8c4b4; }
+    #modules .mod-target { padding:10px 14px; border:1px solid var(--line,#dbe2db); border-radius:8px; background:white; }
+    #modules .mod-target::before { content:""; position:absolute; top:calc(50% - 3px); left:-7px; border:3.5px solid transparent; border-left-color:#6b9381; }
+    #modules .mod-browser a { color:var(--teal,#126856); font-family:var(--mono,monospace); overflow-wrap:anywhere; text-decoration:underline; text-decoration-thickness:1px; text-decoration-color:#abc9b9; text-underline-offset:3px; }
+    #modules .mod-browser a:focus-visible { outline:2px solid #126856; outline-offset:2px; }
+    #modules .mod-browser a:hover { text-decoration-color:currentColor; }
+    #modules .mod-target a { font-size:.87rem; font-weight:650; }
+    #modules .mod-target code { font-family:var(--mono,monospace); font-size:.82em; overflow-wrap:anywhere; }
+    @container (max-width: 540px) {
+      #modules .mod-view { grid-template-columns:minmax(0,1fr); gap:12px; padding:16px; }
+      #modules .mod-tab { width:50%; }
+      #modules .mod-source { padding:12px 14px; }
+      #modules .mod-source::after { top:100%; left:12px; height:15px; width:0; border-top:0; border-left:1px solid #a8c4b4; }
+      #modules .mod-targets { margin-left:33px; }
+      #modules .mod-targets li:first-child::before { top:0; }
+    }
+    @media print {
+      #modules .mod-switcher > .mod-tab { display:none; }
+      #modules .mod-switcher > .mod-view { display:grid; break-inside:avoid; border-top:1px solid #ddd; }
+    }
+  </style>
+</head>
+<body id="top">
+<a class="skip" href="#overview">跳到项目全景</a>
+<svg class="sprites" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="i-logo" viewBox="0 0 32 32">
+      <path d="m2 19 14-7 14 7-14 8z" fill="#18594c"/>
+      <path d="m2 14.5 14-7 14 7-14 8z" fill="#65aa8c" stroke="#fcfdfa" stroke-width="1"/>
+      <path d="m2 10 14-7 14 7-14 8z" fill="#b2e4c7" stroke="#18594c" stroke-width="1.5"/>
+      <path d="m9.1 6.5 14 7m-14 0 14-7" stroke="#578d76" stroke-width=".85"/>
+    </symbol>
+    <g>
+      <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 10-5 10 5-10 5zM2 12l10 5 10-5M2 17l10 5 10-5"/></symbol>
+      <symbol id="i-route" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M8 5h7a3.5 3.5 0 0 1 0 7H9a3.5 3.5 0 0 0 0 7h7"/></symbol>
+      <symbol id="i-modules" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="6" rx="1"/><rect x="2" y="16" width="7" height="6" rx="1"/><rect x="15" y="16" width="7" height="6" rx="1"/><path d="M12 8v4m-6.5 4v-4h13v4"/></symbol>
+      <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></symbol>
+      <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 9-5 9 5v10l-9 5-9-5zM3 7l9 5 9-5m-9 5v10"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2h9l5 5v15H5zM14 2v6h5M8 13h8m-8 4h6"/></symbol>
+      <symbol id="i-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m14 2-9 9a7.5 7.5 0 1 0 10.6 0"/><circle cx="16.8" cy="6.4" r="1.4" fill="currentColor" stroke="none"/></symbol>
+    </g>
+  </defs>
+</svg>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#top"><svg aria-hidden="true"><use href="#i-logo"/></svg>torch-tilelang <small>架构导览</small></a>
+    <nav aria-label="章节导航">
+      <a href="#overview" aria-current="location">项目全景</a>
+      <a href="#pipeline">编译流程</a>
+      <a href="#modules">模块依赖</a>
+      <a href="#example">示例走读</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="hero">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <div class="breadcrumb"><a href="README.md">开发者文档</a><span aria-hidden="true">/</span>架构导览</div>
+        <h1>从 PyTorch 图<br><span>到 Ascend 内核</span></h1>
+        <p>torch-tilelang 是 PyTorch 的推理编译后端。它从计算图中取出可编译的分区，借助 TileLang 生成内核，在昇腾 NPU 上执行。</p>
+        <div class="hero-actions">
+          <a href="#pipeline"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg>查看编译流程</a>
+          <a href="#example"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>跟读代码示例</a>
+        </div>
+      </div>
+      <svg class="hero-diagram" viewBox="0 0 500 310" role="img" aria-labelledby="stack-title stack-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="stack-title">从 FX 计算图到 Ascend NPU 的三层示意图</title>
+        <desc id="stack-desc">上层展示算子的图结构，中层展示用于描述计算与内核的 Relax 和 TIR，下层是执行内核的 Ascend NPU。</desc>
+        <defs>
+          <linearGradient id="board" x2="1" y2="1" gradientUnits="objectBoundingBox" gradientTransform="scale(1)">
+            <stop stop-color="#478778"/><stop offset="1" stop-color="#224c43"/>
+          </linearGradient>
+          <linearGradient id="glass" x2=".9" y2=".8"><stop stop-color="#9becc7" stop-opacity=".28"/><stop offset="1" stop-color="#92d9c9" stop-opacity=".10"/></linearGradient>
+        </defs>
+        <polyline points="116.0,242.0 96.0,252.0 67.0,252.0 48.0,262.0" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="262.0,258.0 282.0,268.0 310.0,268.0 326.0,276.0" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="123.0,245.1 103.0,255.1 74.0,255.1 55.0,265.1" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="269.0,254.9 289.0,264.9 317.0,264.9 333.0,272.9" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="130.0,248.2 110.0,258.2 81.0,258.2 62.0,268.2" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="276.0,251.8 296.0,261.8 324.0,261.8 340.0,269.8" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="137.0,251.2 117.0,261.2 88.0,261.2 69.0,271.2" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="283.0,248.8 303.0,258.8 331.0,258.8 347.0,266.8" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="144.0,254.3 124.0,264.3 95.0,264.3 76.0,274.3" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="290.0,245.7 310.0,255.7 338.0,255.7 354.0,263.7" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="151.0,257.4 131.0,267.4 102.0,267.4 83.0,277.4" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="297.0,242.6 317.0,252.6 345.0,252.6 361.0,260.6" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="158.0,260.5 138.0,270.5 109.0,270.5 90.0,280.5" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="304.0,239.5 324.0,249.5 352.0,249.5 368.0,257.5" fill="none" stroke="#598873" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".66"/>
+        <polyline points="206.0,27.0 206.0,182.0" fill="none" stroke="#7dbba3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5" opacity=".65"/>
+        <polyline points="91.0,74.0 91.0,229.0" fill="none" stroke="#7dbba3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5" opacity=".65"/>
+        <polyline points="206.0,121.0 206.0,276.0" fill="none" stroke="#7dbba3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5" opacity=".65"/>
+        <polyline points="321.0,74.0 321.0,229.0" fill="none" stroke="#7dbba3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5" opacity=".65"/>
+        <polyline points="198.1,191.3 187.5,186.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="213.9,191.3 224.5,186.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="316.1,240.3 326.8,244.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="95.9,240.3 85.2,244.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="190.3,194.5 179.6,190.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="221.7,194.5 232.4,190.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="308.3,243.5 318.9,247.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="103.7,243.5 93.1,247.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="182.4,197.8 171.8,193.4" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="229.6,197.8 240.2,193.4" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="300.4,246.8 311.0,251.2" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="111.6,246.8 101.0,251.2" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="174.5,201.1 163.9,196.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="237.5,201.1 248.1,196.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="292.5,250.1 303.2,254.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="119.5,250.1 108.8,254.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="166.7,204.3 156.0,199.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="245.3,204.3 256.0,199.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="284.7,253.3 295.3,257.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="127.3,253.3 116.7,257.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="158.8,207.6 148.2,203.2" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="253.2,207.6 263.8,203.2" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="276.8,256.6 287.4,261.0" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="135.2,256.6 124.6,261.0" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="150.9,210.9 140.3,206.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="261.1,210.9 271.7,206.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="268.9,259.9 279.6,264.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="143.1,259.9 132.4,264.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="143.1,214.1 132.4,209.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="268.9,214.1 279.6,209.7" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="261.1,263.1 271.7,267.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="150.9,263.1 140.3,267.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="135.2,217.4 124.6,213.0" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="276.8,217.4 287.4,213.0" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="253.2,266.4 263.8,270.8" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="158.8,266.4 148.2,270.8" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="127.3,220.7 116.7,216.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="284.7,220.7 295.3,216.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="245.3,269.7 256.0,274.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="166.7,269.7 156.0,274.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="119.5,223.9 108.8,219.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="292.5,223.9 303.2,219.5" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="237.5,272.9 248.1,277.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="174.5,272.9 163.9,277.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="111.6,227.2 101.0,222.8" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="300.4,227.2 311.0,222.8" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="229.6,276.2 240.2,280.6" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="182.4,276.2 171.8,280.6" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="103.7,230.5 93.1,226.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="308.3,230.5 318.9,226.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="221.7,279.5 232.4,283.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="190.3,279.5 179.6,283.9" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="95.9,233.7 85.2,229.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="316.1,233.7 326.8,229.3" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="213.9,282.7 224.5,287.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="198.1,282.7 187.5,287.1" fill="none" stroke="#d8b676" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="86.0,231.0 206.0,282.0 206.0,290.0 86.0,239.0" fill="#153d35" stroke="#a6c3a3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,282.0 326.0,231.0 326.0,239.0 206.0,290.0" fill="#153d35" stroke="#a6c3a3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,180.0 326.0,231.0 206.0,282.0 86.0,231.0" fill="url(#board)" stroke="#a6c3a3" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,187.1 309.2,231.0 206.0,274.9 102.8,231.0" fill="none" stroke="#a4b988" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="206.0" cy="189.2" r="2" fill="#ceb77b" stroke="none"/>
+        <circle cx="304.4" cy="231.0" r="2" fill="#ceb77b" stroke="none"/>
+        <circle cx="107.6" cy="231.0" r="2" fill="#ceb77b" stroke="none"/>
+        <circle cx="206.0" cy="272.8" r="2" fill="#ceb77b" stroke="none"/>
+        <polygon points="135.0,222.0 206.0,252.0 206.0,259.0 135.0,229.0" fill="#284337" stroke="#d9c48d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,252.0 277.0,222.0 277.0,229.0 206.0,259.0" fill="#284337" stroke="#d9c48d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,192.0 277.0,222.0 206.0,252.0 135.0,222.0" fill="#4b6950" stroke="#d9c48d" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,197.6 260.6,221.0 206.0,244.4 151.4,221.0" fill="#a0a27a" stroke="#e4cc95" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,200.6 220.0,206.6 206.0,212.6 192.0,206.6" fill="#e9c281" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="189.6,207.7 203.6,213.7 189.6,219.7 175.6,213.7" fill="#829078" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="173.1,214.7 187.1,220.7 173.1,226.7 159.1,220.7" fill="#829078" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="222.4,207.7 236.4,213.7 222.4,219.7 208.4,213.7" fill="#829078" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,214.7 220.0,220.7 206.0,226.7 192.0,220.7" fill="#829078" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="189.6,221.8 203.6,227.8 189.6,233.8 175.6,227.8" fill="#e9c281" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="238.9,214.7 252.9,220.7 238.9,226.7 224.9,220.7" fill="#829078" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="222.4,221.8 236.4,227.8 222.4,233.8 208.4,227.8" fill="#e9c281" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,228.8 220.0,234.8 206.0,240.8 192.0,234.8" fill="#829078" stroke="#d6c18e" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="93.0,150.0 206.0,197.0 206.0,201.0 93.0,154.0" fill="#336b59" stroke="#a0dfbc" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,197.0 319.0,150.0 319.0,154.0 206.0,201.0" fill="#336b59" stroke="#a0dfbc" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,103.0 319.0,150.0 206.0,197.0 93.0,150.0" fill="url(#glass)" stroke="#a0dfbc" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="191.9,108.9 304.9,155.9" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="220.1,108.9 107.1,155.9" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="177.8,114.8 290.8,161.8" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="234.2,114.8 121.2,161.8" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="163.6,120.6 276.6,167.6" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="248.4,120.6 135.4,167.6" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="149.5,126.5 262.5,173.5" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="262.5,126.5 149.5,173.5" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="135.4,132.4 248.4,179.4" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="276.6,132.4 163.6,179.4" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="121.2,138.2 234.2,185.2" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="290.8,138.2 177.8,185.2" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="107.1,144.1 220.1,191.1" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polyline points="304.9,144.1 191.9,191.1" fill="none" stroke="#8fcbae" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <polygon points="206.0,126.4 217.9,131.4 206.0,136.3 194.1,131.4" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="220.1,132.3 232.0,137.2 220.1,142.2 208.3,137.2" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="234.2,138.2 246.1,143.1 234.2,148.1 222.4,143.1" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="191.9,132.3 203.7,137.2 191.9,142.2 180.0,137.2" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,138.2 217.9,143.1 206.0,148.1 194.1,143.1" fill="#e7cc8f" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="220.1,144.1 232.0,149.0 220.1,153.9 208.3,149.0" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="177.8,138.2 189.6,143.1 177.8,148.1 165.9,143.1" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="191.9,144.1 203.7,149.0 191.9,153.9 180.0,149.0" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,149.9 217.9,154.9 206.0,159.8 194.1,154.9" fill="#97c79e" stroke="#d9edb3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="93.0,74.0 206.0,121.0 206.0,124.0 93.0,77.0" fill="#478570" stroke="#b0edd2" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,121.0 319.0,74.0 319.0,77.0 206.0,124.0" fill="#478570" stroke="#b0edd2" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+        <polygon points="206.0,27.0 319.0,74.0 206.0,121.0 93.0,74.0" fill="url(#glass)" stroke="#b0edd2" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="228.6,36.4 115.6,83.4" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="183.4,36.4 296.4,83.4" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="251.2,45.8 138.2,92.8" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="160.8,45.8 273.8,92.8" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="273.8,55.2 160.8,102.2" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="138.2,55.2 251.2,102.2" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="296.4,64.6 183.4,111.6" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="115.6,64.6 228.6,111.6" fill="none" stroke="#b5f6d6" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round" opacity=".24"/>
+        <polyline points="146.1,67.8 192.4,72.0" fill="none" stroke="#b6f5d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="194.7,44.7 192.4,72.0" fill="none" stroke="#b6f5d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="192.4,72.0 215.0,82.3" fill="none" stroke="#b6f5d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="194.7,44.7 264.8,77.6" fill="none" stroke="#b6f5d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="215.0,82.3 264.8,77.6" fill="none" stroke="#b6f5d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="146.1" cy="67.8" r="6.4" fill="#1d4f40" stroke="#a9e5c3"/>
+        <circle cx="146.1" cy="67.8" r="3.1" fill="#ecc98b" stroke="none"/>
+        <circle cx="194.7" cy="44.7" r="6.4" fill="#1d4f40" stroke="#a9e5c3"/>
+        <circle cx="194.7" cy="44.7" r="3.1" fill="#ecc98b" stroke="none"/>
+        <circle cx="192.4" cy="72.0" r="6.4" fill="#1d4f40" stroke="#a9e5c3"/>
+        <circle cx="192.4" cy="72.0" r="3.1" fill="#c2f9d6" stroke="none"/>
+        <circle cx="215.0" cy="82.3" r="6.4" fill="#1d4f40" stroke="#a9e5c3"/>
+        <circle cx="215.0" cy="82.3" r="3.1" fill="#c2f9d6" stroke="none"/>
+        <circle cx="264.8" cy="77.6" r="6.4" fill="#1d4f40" stroke="#a9e5c3"/>
+        <circle cx="264.8" cy="77.6" r="3.1" fill="#c2f9d6" stroke="none"/>
+        <polyline points="292.0,66.0 318.0,49.0 344.0,49.0" fill="none" stroke="#a5edc9" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="292.0" cy="66.0" r="2.3" fill="#a5edc9" stroke="none"/>
+        <text x="353" y="53" fill="#f1f9f1" font-family="monospace" font-size="15" font-weight="600">FX Graph</text>
+        <text x="353" y="72" fill="#bfd6c9" font-size="13">算子与数据流</text>
+        <polyline points="306.0,147.0 318.0,141.0 344.0,141.0" fill="none" stroke="#a5edc9" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="306.0" cy="147.0" r="2.3" fill="#a5edc9" stroke="none"/>
+        <text x="353" y="145" fill="#f1f9f1" font-family="monospace" font-size="15" font-weight="600">Relax / TIR</text>
+        <text x="353" y="164" fill="#bfd6c9" font-size="13">图与内核表示</text>
+        <polyline points="314.0,234.0 318.0,232.0 344.0,232.0" fill="none" stroke="#ead098" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="314.0" cy="234.0" r="2.3" fill="#ead098" stroke="none"/>
+        <text x="353" y="236" fill="#f1f9f1" font-family="monospace" font-size="15" font-weight="600">Ascend NPU</text>
+        <text x="353" y="255" fill="#bfd6c9" font-size="13">设备执行</text>
+      </svg>
+    </div>
+  </div>
+  <div class="wrap">
+    <section id="overview" class="content-section" aria-labelledby="overview-title">
+      <div class="section-heading">
+        <h2 id="overview-title"><svg class="section-icon" aria-hidden="true"><use href="#i-layers"/></svg>项目全景</h2>
+        <p>Dynamo 提供 FX 图，TileLang 编译内核。连接两者的图执行器用 Torch 分配中间张量和输出。</p>
+      </div>
+      <figure class="map" aria-label="项目全景图">
+        <figcaption class="map-top">
+          <strong>编译与执行架构</strong>
+          <div class="map-key"><span><i></i>项目内部</span><span><i></i>外部组件</span></div>
+        </figcaption>
+        <div class="map-canvas">
+          <div class="map-node external">
+            <div class="node-title"><svg aria-hidden="true"><use href="#i-flame"/></svg><h3>PyTorch</h3></div>
+            <p>TorchDynamo 捕获模型计算，将 FX 图交给后端。</p>
+            <code class="map-tag">torch.compile</code>
+          </div>
+          <span class="wire" aria-hidden="true"></span>
+          <div class="map-node internal">
+            <div class="node-title"><h3>torch-tilelang</h3><small>项目内部</small></div>
+            <div class="map-parts">
+              <a href="../src/torch_tilelang/backend.py"><strong>识别与分区</strong><code>backend.py</code></a>
+              <a href="../src/torch_tilelang/frontend.py"><strong>FX 转 Relax</strong><code>frontend.py</code></a>
+              <a href="../src/torch_tilelang/schedules/ascend/schedule.py"><strong>Ascend 调度</strong><code>schedule.py</code></a>
+              <a href="../src/torch_tilelang/runtime.py"><strong>图执行器</strong><code>runtime.py</code></a>
+            </div>
+          </div>
+          <span class="wire" aria-hidden="true"></span>
+          <div class="map-node external">
+            <div class="node-title"><svg aria-hidden="true"><use href="#i-box"/></svg><h3>TileLang</h3></div>
+            <div class="target-pairs"><div>AscendC <code>/ tvm_ffi</code></div><div>PTO <code>/ pto</code></div></div>
+            <div class="chip-target"><svg class="icon" aria-hidden="true"><use href="#i-chip"/></svg>Ascend NPU</div>
+          </div>
+        </div>
+        <div class="scope"><strong>输入约束</strong><span>静态形状</span><span>同一 NPU、连续且零偏移</span><span><code>float16 / bfloat16 / float32</code></span></div>
+      </figure>
+    </section>
+<section id="pipeline" class="content-section" aria-labelledby="pipeline-title">
+  <div class="section-heading">
+    <h2 id="pipeline-title"><svg class="section-icon" aria-hidden="true"><use href="#i-route"/></svg>编译流程</h2>
+    <p>沿着一张 FX 图，看 PyTorch 的张量运算如何变成 Ascend NPU 上的内核调用。</p>
+  </div>
+  <div class="flow-card">
+    <div class="flow-steps" aria-label="编译流程阶段">
+      <a id="flow-tab-capture" class="flow-step" href="#flow-capture"><small>01 / FX</small><b>捕获与分区</b></a>
+      <a id="flow-tab-import" class="flow-step" href="#flow-import"><small>02 / IR</small><b>转换中间表示</b></a>
+      <a id="flow-tab-lower" class="flow-step" href="#flow-lower"><small>03 / TIR</small><b>调度与编译</b></a>
+      <a id="flow-tab-validate" class="flow-step" href="#flow-validate"><small>04 / CHECK</small><b>校验与融合</b></a>
+      <a id="flow-tab-launch" class="flow-step" href="#flow-launch"><small>05 / NPU</small><b>执行与复用</b></a>
+    </div>
+    <article id="flow-capture" class="flow-panel">
+      <h3>从 FX 图划出可编译的分区</h3>
+      <p>Dynamo 把捕获的图交给 <code>tilelang_backend</code>。后端检查原地修改、别名和前向钩子，再把受支持的算子组合成分区。像 <code>torch.sin</code> 这样的纯算子可以留给 PyTorch，与编译分区一起执行。每个分区在第一次收到真实张量时编译。</p>
+      <dl class="flow-io"><div><dt>输入</dt><dd>FX GraphModule、样例输入和后端选项</dd></div><div><dt>输出</dt><dd>含 <code>_CompiledPartition</code> 子模块的可调用图</dd></div></dl>
+      <p class="flow-edge">含副作用、输入含非张量或全图没有可编译分区时，默认交回 PyTorch 执行。开启 <code>strict=True</code> 会在这些情形下报错。</p>
+      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/backend.py">backend.py · make_backend</a></div>
+    </article>
+    <article id="flow-import" class="flow-panel">
+      <h3>把分区转换成 Relax 与 TIR</h3>
+      <p><code>fx_to_relax</code> 根据张量形状与类型翻译运算。Relax 描述数据怎样流动。合法化步骤把运算展开成可调度的 TIR 函数，由 <code>relax.call_tir</code> 引用。</p>
+      <dl class="flow-io"><div><dt>输入</dt><dd>一个 FX 分区及其真实 NPU 张量</dd></div><div><dt>输出</dt><dd>包含 Relax 主函数和未调度 PrimFunc 的 IRModule</dd></div></dl>
+      <p class="flow-edge">分区要求同一 NPU 上的连续推理张量，每维为正的静态整数，存储偏移为零，支持 float16、bfloat16、float32。默认配置下，输入校验或转换失败会回退到该分区的 PyTorch 实现。</p>
+      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/frontend.py">frontend.py · fx_to_relax</a></div>
+    </article>
+    <article id="flow-lower" class="flow-panel">
+      <h3>为每个内核选择 Ascend 调度</h3>
+      <p><code>build_runner</code> 收集主函数引用的 PrimFunc。调度器依次尝试逐元素、归约和矩阵乘规则。匹配成功后，兼容层把调度结果交给 <code>tilelang.compile</code>。运行时再把调用顺序整理成执行计划。</p>
+      <dl class="flow-io"><div><dt>输入</dt><dd>未调度的 PrimFunc 和目标配置</dd></div><div><dt>输出</dt><dd>持有已编译内核及执行计划的基线 runner</dd></div></dl>
+      <p class="flow-edge">AscendC 使用 <code>tvm_ffi</code> 执行适配器，PTO 使用 <code>pto</code> 适配器。分区内核缺少适用调度时，默认回退到 PyTorch。严格模式会抛出错误。</p>
+      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py · schedule_primfunc</a><a href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py · compile_kernel</a></div>
+    </article>
+    <article id="flow-validate" class="flow-panel">
+      <h3>先与 eager 对验，再决定是否融合</h3>
+      <p>后端用相同输入运行基线与原始分区，对比输出。默认 <code>fusion="off"</code>，通过校验即可使用基线。设为 <code>"profile"</code> 时，还会另行编译融合候选并比较正确性、设备耗时与整段执行耗时。</p>
+      <dl class="flow-io"><div><dt>输入</dt><dd>基线 runner、原始分区和同一组输入</dd></div><div><dt>输出</dt><dd>经过验证的基线，或实测通过的融合 runner</dd></div></dl>
+      <p class="flow-edge">基线结果不符时，默认使用 eager。融合候选未通过校验或性能门槛时，保留基线。设备执行错误会向上传递。</p>
+      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/fusion.py">fusion.py · validate_runner / select_fusion</a></div>
+    </article>
+    <article id="flow-launch" class="flow-panel">
+      <h3>按计划执行，把张量交还给 Torch</h3>
+      <p><code>TorchGraphRunner</code> 在 Torch 当前 NPU 流上依次启动内核，由 Torch 为输出分配空间，并在中间值最后一次使用后释放对应的引用。</p>
+      <dl class="flow-io"><div><dt>输入</dt><dd>已选 runner 和本次调用的张量</dd></div><div><dt>输出</dt><dd>由 Torch 持有的结果张量或张量元组</dd></div></dl>
+      <p class="flow-edge">每个分区保留最近一次签名及其 runner。形状、类型、设备、步幅、存储偏移、梯度状态等相同时直接复用，签名变化时重新准备。</p>
+      <div class="flow-sources"><span>对应源码</span><a href="../src/torch_tilelang/runtime.py">runtime.py · TorchGraphRunner</a><a href="../src/torch_tilelang/backend.py">backend.py · _CompiledPartition</a></div>
+    </article>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('pipeline');
+      const card = root.querySelector('.flow-card');
+      const list = root.querySelector('.flow-steps');
+      const tabs = Array.from(list.querySelectorAll('.flow-step'));
+      const panels = tabs.map(tab => document.getElementById(tab.hash.slice(1)));
+      function activate(index, focus = false) {
+        tabs.forEach((tab, i) => {
+          tab.setAttribute('aria-selected', String(i === index));
+          tab.tabIndex = i === index ? 0 : -1;
+          panels[i].hidden = i !== index;
+        });
+        if (focus) tabs[index].focus();
+      }
+      tabs.forEach((tab, index) => {
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-controls', panels[index].id);
+        panels[index].setAttribute('role', 'tabpanel');
+        panels[index].setAttribute('aria-labelledby', tab.id);
+        panels[index].tabIndex = 0;
+        tab.addEventListener('click', event => {
+          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          activate(index, true);
+        });
+        tab.addEventListener('keydown', event => {
+          let next;
+          if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+          else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+          else if (event.key === 'Home') next = 0;
+          else if (event.key === 'End') next = tabs.length - 1;
+          else if (event.key === ' ') next = index;
+          else return;
+          event.preventDefault();
+          activate(next, true);
+        });
+      });
+      list.setAttribute('role', 'tablist');
+      card.classList.add('flow-ready');
+      const syncFragment = () => {
+        const index = tabs.findIndex(tab => tab.hash === window.location.hash);
+        if (index >= 0) activate(index);
+      };
+      activate(0);
+      syncFragment();
+      window.addEventListener('hashchange', syncFragment);
+    })();
+  </script>
+</section>
+<section id="modules" class="content-section" aria-labelledby="modules-title">
+  <div class="section-heading">
+    <div>
+      <h2 id="modules-title"><svg class="section-icon" aria-hidden="true"><use href="#i-modules"></use></svg>模块依赖</h2>
+      <p>选择一个调用方，沿箭头查看它直接使用的关键模块。点击文件名可阅读源码。</p>
+    </div>
+  </div>
+  <div class="mod-browser">
+    <fieldset class="mod-switcher">
+      <legend class="mod-sr">选择调用方模块</legend>
+      <input class="mod-radio" type="radio" id="mod-backend" name="mod-caller" aria-controls="mod-view-backend" checked><label class="mod-tab" for="mod-backend">backend.py</label>
+      <input class="mod-radio" type="radio" id="mod-runtime" name="mod-caller" aria-controls="mod-view-runtime"><label class="mod-tab" for="mod-runtime">runtime.py</label>
+      <input class="mod-radio" type="radio" id="mod-schedule" name="mod-caller" aria-controls="mod-view-schedule"><label class="mod-tab" for="mod-schedule">schedule.py</label>
+      <input class="mod-radio" type="radio" id="mod-fusion" name="mod-caller" aria-controls="mod-view-fusion"><label class="mod-tab" for="mod-fusion">fusion.py</label>
+      <div id="mod-view-backend" class="mod-view view-backend">
+        <div class="mod-source"><small>Dynamo 后端</small><h3><a href="../src/torch_tilelang/backend.py">backend.py</a></h3><p>划分 FX 图，编译并校验可执行分区。</p></div>
+        <ul class="mod-targets" aria-label="backend.py 使用的模块">
+          <li><div class="mod-target"><a href="../src/torch_tilelang/config.py">config.py</a><p><code>GraphConfig</code> 收集后端选项。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/frontend.py">frontend.py</a><p><code>fx_to_relax</code> 把受支持的 FX 分区转换成 Relax IR。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/runtime.py">runtime.py</a><p><code>build_runner</code> 创建分区执行器。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>validate_runner</code> 将基线执行结果与 PyTorch 对照。</p></div></li>
+        </ul>
+      </div>
+      <div id="mod-view-runtime" class="mod-view view-runtime">
+        <div class="mod-source"><small>图执行器</small><h3><a href="../src/torch_tilelang/runtime.py">runtime.py</a></h3><p>编译 PrimFunc，按执行计划分配张量、启动内核。</p></div>
+        <ul class="mod-targets" aria-label="runtime.py 使用的模块">
+          <li><div class="mod-target"><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a><p><code>schedule_primfunc</code> 选择 Ascend 调度规则。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py</a><p><code>compile_kernel</code> 调用 TileLang 编译已调度的函数。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/fusion.py">fusion.py</a><p><code>kernel_count</code> 统计图中的内核调用点。</p></div></li>
+        </ul>
+      </div>
+      <div id="mod-view-schedule" class="mod-view view-schedule">
+        <div class="mod-source"><small>调度分派</small><h3><a href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py</a></h3><p>先尝试逐元素调度，再依次尝试归约和矩阵乘。</p></div>
+        <ul class="mod-targets" aria-label="schedule.py 使用的模块">
+          <li><div class="mod-target"><a href="../src/torch_tilelang/schedules/ascend/elementwise.py">elementwise.py</a><p><code>schedule_elementwise</code> 为逐元素运算生成 Ascend 调度。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/schedules/ascend/operators.py">operators.py</a><p><code>try_schedule_reduction</code> 匹配末轴归约。同文件的 <code>try_schedule_gemm</code> 匹配二维 GEMM。</p></div></li>
+        </ul>
+      </div>
+      <div id="mod-view-fusion" class="mod-view view-fusion">
+        <div class="mod-source"><small>融合选择</small><h3><a href="../src/torch_tilelang/fusion.py">fusion.py</a></h3><p>对照 PyTorch 校验候选执行器，再测量设备耗时和端到端耗时。</p></div>
+        <ul class="mod-targets" aria-label="fusion.py 使用的模块">
+          <li><div class="mod-target"><a href="../src/torch_tilelang/compat/profiler.py">compat/profiler.py</a><p><code>measure</code> 为基线和融合候选采集计时样本。</p></div></li>
+          <li><div class="mod-target"><a href="../src/torch_tilelang/errors.py">errors.py</a><p><code>MeasurementUnavailableError</code> 标识计时不可用，此时保留基线方案。</p></div></li>
+        </ul>
+      </div>
+    </fieldset>
+  </div>
+</section>
+    <section id="example" class="content-section" aria-labelledby="example-title">
+      <div class="section-heading">
+        <h2 id="example-title"><svg class="section-icon" aria-hidden="true"><use href="#i-code"/></svg>示例走读</h2>
+        <p>跟着仓库中的广播加法、ReLU 和乘法，观察一个分区如何执行三个算子。</p>
+      </div>
+      <div class="example-layout">
+        <div class="code-window">
+          <div class="code-title"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>test_torch_compile.py</div>
+          <pre tabindex="0" aria-label="示例的核心 Python 代码"><code><span class="tok-kw">def</span> <span class="tok-fn">model</span>(x, bias):
+    <span class="tok-kw">return</span> torch.relu(x + bias) * bias
+
+compiled = torch.<span class="tok-fn">compile</span>(
+    model, backend=<span class="tok-str">"tilelang"</span>,
+    fullgraph=<span class="tok-kw">True</span>, options={<span class="tok-str">"strict"</span>: <span class="tok-kw">True</span>},
+)
+torch.testing.<span class="tok-fn">assert_close</span>(compiled(x, bias), model(x, bias))</code></pre>
+        </div>
+        <div class="trace">
+          <h3>一次调用里发生了什么？</h3>
+          <div class="trace-shapes"><code>x [7, 65]</code><code>bias [65]</code></div>
+          <p><code>bias</code> 广播到 7 行。三个相邻算子都受支持，Dynamo 交付的 FX 图可划成一个 TileLang 分区。</p>
+          <p>在此例的默认未融合路径中，分区包含三个 <code>call_tir</code>。执行器依次启动三个内核，得到形状为 <code>[7, 65]</code> 的输出，再由测试与 PyTorch eager 结果对照。</p>
+          <a class="source-link" href="../examples/ascend/test_torch_compile.py"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>查看完整示例</a>
+        </div>
+      </div>
+      <div class="related"><strong>继续阅读</strong><a href="install.zh.md">安装与环境验证</a><a href="ascend-walkthrough.zh.md">Ascend 后端详细走读</a><a href="../tests/ascend/test_backend.py">后端集成测试</a></div>
+    </section>
+  </div>
+</main>
+<footer class="wrap page-footer"><span>torch-tilelang · 开发者文档</span><a href="#top">回到顶部</a></footer>
+<script>
+  // Keep the chapter navigation in sync for bookmarks and manual scrolling.
+  const chapterLinks = [...document.querySelectorAll('.topbar nav a')];
+  const chapters = chapterLinks.map(link => document.querySelector(link.hash));
+  const topbar = document.querySelector('.topbar');
+  function markChapter() {
+    const threshold = topbar.offsetHeight + 36;
+    const active = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2
+      ? chapters[chapters.length - 1]
+      : chapters.filter(section => section.getBoundingClientRect().top <= threshold).pop() || chapters[0];
+    for (const link of chapterLinks) {
+      if (link.hash === '#' + active.id) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    }
+  }
+  let framePending = false;
+  window.addEventListener('scroll', () => {
+    if (framePending) return;
+    framePending = true;
+    requestAnimationFrame(() => { markChapter(); framePending = false; });
+  }, { passive: true });
+  window.addEventListener('resize', markChapter);
+  window.addEventListener('pageshow', markChapter);
+</script>
+</body>
+</html>
