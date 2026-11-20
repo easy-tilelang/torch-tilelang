@@ -198,6 +198,13 @@
     #pipeline .flow-panel h3 { margin: 0 0 10px; color: var(--ink); font-size: clamp(19px, 2vw, 23px); line-height: 1.4; }
     #pipeline .flow-panel p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.75; overflow-wrap: anywhere; }
     #pipeline .flow-panel code { font: .87em/1.5 var(--mono); color: var(--ink); }
+    #pipeline .flow-example { margin: 16px 0; padding: 0 16px; border: 1px solid #c6ddcf; border-radius: 8px; background: #f4f8f4; }
+    #pipeline .flow-example summary { margin-inline: -16px; padding: 12px 16px; color: var(--teal); font-weight: 650; cursor: pointer; }
+    #pipeline .flow-example[open] { padding-bottom: 14px; }
+    #pipeline .flow-example pre { margin: .5rem 0; padding: .6rem .8rem; border-radius: 5px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #pipeline .flow-example table { margin: .6rem 0; width: min(100%, 30rem); border-collapse: collapse; background: white; font-variant-numeric: tabular-nums; }
+    #pipeline .flow-example :is(th, td) { padding: .22rem .45rem; border-bottom: 1px solid var(--line); text-align: right; }
+    #pipeline .flow-example th:first-child { text-align: left; }
     #pipeline .partition-note { margin-block: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #f2f7f2; min-width: 0; }
     #pipeline .partition-note summary { cursor: pointer; color: var(--teal); font-size: 16px; font-weight: 650; }
     #pipeline .partition-note[open] summary { margin-bottom: 8px; }
@@ -217,6 +224,7 @@
     }
     @media print {
       #pipeline .flow-panel[hidden] { display: block; }
+      #pipeline .flow-example::details-content { content-visibility: visible; }
       #pipeline .flow-steps { display: none; }
       #pipeline .flow-panel { break-inside: avoid; }
     }
@@ -571,7 +579,7 @@
 <section id="pipeline" class="content-section" aria-labelledby="pipeline-title">
   <div class="section-heading">
     <h2 id="pipeline-title"><svg class="section-icon" aria-hidden="true"><use href="#i-route"/></svg>编译流程</h2>
-    <p>沿着一张 FX 图，看 PyTorch 的张量运算如何变成 Ascend NPU 上的内核调用。</p>
+    <p>五个阶段都跟踪 <code>torch.relu(x + bias) * bias</code>。输入 <code>x</code> 有 7 行、65 列，每一行共用同一组 65 个偏置值，采用默认的未融合配置。<a data-preview="example" href="../examples/ascend/test_torch_compile.py">查看仓库示例</a></p>
   </div>
   <div class="flow-card">
     <div class="flow-steps" aria-label="编译流程阶段">
@@ -584,6 +592,13 @@
     <article id="flow-capture" class="flow-panel">
       <h3>从 FX 图划出可编译的分区</h3>
       <p>Dynamo 把捕获的图交给 <code>tilelang_backend</code>。后端检查原地修改、别名和前向钩子，再把受支持的算子组合成分区。像 <code>torch.sin</code> 这样的纯算子可以留给 PyTorch，与编译分区一起执行。每个分区在第一次收到真实张量时编译。</p>
+      <details class="flow-example">
+        <summary>示例 · 一行 Python 被分进哪个区？</summary>
+        <pre><code>a = x + bias
+b = relu(a)
+y = b * bias</code></pre>
+        <p>按 FX 图的依赖顺序展开，得到这三个算子。它们都受支持，所以后端把它们放进同一个分区。分区接收 <code>x</code> 和 <code>bias</code>，只把最后的 <code>y</code> 交回外层图。</p>
+      </details>
       <details class="partition-note">
         <summary>分区是什么意思？</summary>
         <p><strong>把计算图中的算子分组，交给不同的执行方式处理。</strong> 例如加法、ReLU 和乘法可交给 TileLang，暂不支持的 <code>sin</code> 留在 Torch：</p>
@@ -599,6 +614,13 @@
     <article id="flow-import" class="flow-panel">
       <h3>把分区转换成 Relax 与 TIR</h3>
       <p><code>fx_to_relax</code> 根据张量形状与类型翻译运算。Relax 描述数据怎样流动。合法化步骤把运算展开成可调度的 TIR 函数，由 <code>relax.call_tir</code> 引用。</p>
+      <details class="flow-example">
+        <summary>示例 · 同一个分区在 Relax 里长什么样？</summary>
+        <pre><code>a = call_tir(add,  (x, bias))
+b = call_tir(relu, (a,))
+y = call_tir(mul,  (b, bias))</code></pre>
+        <p>这是省略类型和输出声明的伪代码。三行描述三次调用及其数据依赖。以加法为例，对应的 TIR 函数计算 <code>a[i, j] = x[i, j] + bias[j]</code>。第 0 行和第 6 行都读取同一个 <code>bias[j]</code>，这就是广播。</p>
+      </details>
       <dl class="flow-io"><div><dt>输入</dt><dd>一个 FX 分区及其真实 NPU 张量</dd></div><div><dt>输出</dt><dd>包含 Relax 主函数和未调度 PrimFunc 的 IRModule</dd></div></dl>
       <p class="flow-edge">分区要求同一 NPU 上的连续推理张量，每维为正的静态整数，存储偏移为零，支持 float16、bfloat16、float32。默认配置下，输入校验或转换失败会回退到该分区的 PyTorch 实现。</p>
       <div class="flow-sources"><span>对应源码</span><a data-preview="import" href="../src/torch_tilelang/frontend.py">frontend.py · fx_to_relax</a></div>
@@ -606,6 +628,14 @@
     <article id="flow-lower" class="flow-panel">
       <h3>为每个内核选择 Ascend 调度</h3>
       <p><code>build_runner</code> 收集主函数引用的 PrimFunc。调度器依次尝试逐元素、归约和矩阵乘规则。匹配成功后，兼容层把调度结果交给 <code>tilelang.compile</code>。运行时再把调用顺序整理成执行计划。</p>
+      <details class="flow-example">
+        <summary>示例 · 用加法内核看 455 个元素怎么分工</summary>
+        <p>把 <code>7 × 65</code> 个输出按行编号为 0 到 454。默认每个块容纳 1024 个元素，本例只需一个块，由一个逻辑核上的 128 个线程处理。每行 65 个元素，调度器在这里选择向量宽度 1。</p>
+        <pre><code>线程 0   →   0、128、256、384
+线程 70  →  70、198、326、454
+线程 71  →  71、199、327</code></pre>
+        <p>线程 70 写入最后一个位置 <code>a[6, 64]</code>。线程 71 下一次算出的索引是 455，边界检查让它跳过写入。ReLU 和乘法也各自生成一个逐元素内核。</p>
+      </details>
       <dl class="flow-io"><div><dt>输入</dt><dd>未调度的 PrimFunc 和目标配置</dd></div><div><dt>输出</dt><dd>持有已编译内核及执行计划的基线 runner</dd></div></dl>
       <p class="flow-edge">AscendC 使用 <code>tvm_ffi</code> 执行适配器，PTO 使用 <code>pto</code> 适配器。分区内核缺少适用调度时，默认回退到 PyTorch。严格模式会抛出错误。</p>
       <div class="flow-sources"><span>对应源码</span><a data-preview="schedule" href="../src/torch_tilelang/schedules/ascend/schedule.py">schedule.py · schedule_primfunc</a><a data-preview="compile" href="../src/torch_tilelang/compat/tilelang.py">compat/tilelang.py · compile_kernel</a></div>
@@ -613,6 +643,19 @@
     <article id="flow-validate" class="flow-panel">
       <h3>先与 eager 对验，再决定是否融合</h3>
       <p>后端用相同输入运行基线与原始分区，对比输出。默认 <code>fusion="off"</code>，通过校验即可使用基线。设为 <code>"profile"</code> 时，还会另行编译融合候选并比较正确性、设备耗时与整段执行耗时。</p>
+      <details class="flow-example">
+        <summary>示例 · 手算第一行的三列，再和编译结果对照</summary>
+        <p>仓库测试使用随机张量。为方便手算，假设第一行前三个值是 <code>[-3, 1, 4]</code>，对应的偏置是 <code>[2, 3, -2]</code>。</p>
+        <table aria-label="第一行前三列的逐步计算">
+          <thead><tr><th scope="col">运算</th><th scope="col">第 0 列</th><th scope="col">第 1 列</th><th scope="col">第 2 列</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">加偏置</th><td>−1</td><td>4</td><td>2</td></tr>
+            <tr><th scope="row">ReLU</th><td>0</td><td>4</td><td>2</td></tr>
+            <tr><th scope="row">乘偏置</th><td>0</td><td>12</td><td>−4</td></tr>
+          </tbody>
+        </table>
+        <p>PyTorch eager 的参考输出以 <code>[0, 12, -4]</code> 开头。后端按容差对照整个 <code>[7, 65]</code> 输出。若开启融合评测，候选把第三列算成 <code>4</code>，它就会在数值校验时被淘汰，继续使用已通过校验的三个内核。</p>
+      </details>
       <dl class="flow-io"><div><dt>输入</dt><dd>基线 runner、原始分区和同一组输入</dd></div><div><dt>输出</dt><dd>经过验证的基线，或实测通过的融合 runner</dd></div></dl>
       <p class="flow-edge">基线结果不符时，默认使用 eager。融合候选未通过校验或性能门槛时，保留基线。设备执行错误会向上传递。</p>
       <div class="flow-sources"><span>对应源码</span><a data-preview="fusion" href="../src/torch_tilelang/fusion.py">fusion.py · validate_runner / select_fusion</a></div>
@@ -620,6 +663,14 @@
     <article id="flow-launch" class="flow-panel">
       <h3>按计划执行，把张量交还给 Torch</h3>
       <p><code>TorchGraphRunner</code> 在 Torch 当前 NPU 流上依次启动内核，由 Torch 为输出分配空间，并在中间值最后一次使用后释放对应的引用。</p>
+      <details class="flow-example">
+        <summary>示例 · 第二次调用只换数值，会发生什么？</summary>
+        <pre><code>y1 = compiled(x, bias)
+x2 = x.clone()
+x2[0, 0] = 1
+y2 = compiled(x2, bias)</code></pre>
+        <p>沿用上一步的手算输入，第一次得到 <code>y1[0, 0] = 0</code>。第二次的设备、形状、类型、布局和梯度状态都相同，分区复用执行计划，按顺序再运行加法、ReLU 和乘法。这次得到 <code>y2[0, 0] = relu(1 + 2) × 2 = 6</code>，第一次返回的 <code>y1</code> 仍保留原值。</p>
+      </details>
       <dl class="flow-io"><div><dt>输入</dt><dd>已选 runner 和本次调用的张量</dd></div><div><dt>输出</dt><dd>由 Torch 持有的结果张量或张量元组</dd></div></dl>
       <p class="flow-edge">每个分区保留最近一次签名及其 runner。形状、类型、设备、步幅、存储偏移、梯度状态等相同时直接复用，签名变化时重新准备。</p>
       <div class="flow-sources"><span>对应源码</span><a data-preview="execute" href="../src/torch_tilelang/runtime.py">runtime.py · TorchGraphRunner</a><a data-preview="signature" href="../src/torch_tilelang/backend.py">backend.py · _CompiledPartition</a></div>
