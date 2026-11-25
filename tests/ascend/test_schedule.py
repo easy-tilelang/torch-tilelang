@@ -293,3 +293,23 @@ def test_injective_schedule_runtime_unary_intrinsic(dtype, operation, target, ex
     torch.testing.assert_close(actual, expected, equal_nan=True)
     zeros = (actual == 0) & (expected == 0)
     assert torch.equal(torch.signbit(actual)[zeros], torch.signbit(expected)[zeros])
+
+
+@pytest.mark.parametrize("target", _TARGETS)
+@pytest.mark.parametrize("value_copies", [1, 4])
+def test_grouped_decode_gate_broadcast_source(target, value_copies):
+    # In a three-token verification step a different gate scales each of four
+    # hidden-state copies. Values can be shared across copies or per-copy.
+    gates = te.placeholder((3, 4, 1), "float32", name="gates")
+    values = te.placeholder((3, value_copies, 5120), "float32", name="values")
+    output = te.compute(
+        (3, 4, 5120),
+        lambda token, copy, col: gates[token, copy, 0] * values[token, 0 if value_copies == 1 else copy, col],
+        name="output",
+    )
+    # The Relax frontend uses int64 index expressions for this model.
+    func = te.create_prim_func([gates, values, output], index_dtype_override="int64").with_attr("global_symbol", "main")
+    scheduled = schedule_elementwise(func)
+    assert int(scheduled.attrs["tl.graph_vector_width"]) == 4
+    source = lower_for_source(scheduled, GraphConfig(target=target)).kernel_source
+    assert ("with pto.simt(" if target == "pto" else "__simt_vf__") in source

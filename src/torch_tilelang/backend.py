@@ -17,6 +17,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 from .config import GraphConfig
 from .frontend import UnsupportedGraphError, _has_forward_hooks, fx_to_relax, validate_inputs
+from .ordered import NativeNodeReport, partition_in_order
 from .runtime import _resolve_graph_context, _resolved_config, build_runner
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,15 @@ class PartitionReport:
     fusion_decision: object | None = None
     target_backend: str | None = None
     execution_backend: str | None = None
+    node_names: tuple[str, ...] = ()
+    targets: tuple[str, ...] = ()
 
 
 @dataclass
 class GraphReport:
     partitions: list[PartitionReport] = field(default_factory=list)
     fallback_reason: str | None = None
+    native_nodes: list[NativeNodeReport] = field(default_factory=list)
 
 
 _FUNCTION_NAMES = frozenset(
@@ -226,6 +230,8 @@ class _CompiledPartition(torch.nn.Module):
             validate_inputs(args)
             mod = fx_to_relax(self.original, args)
             baseline = build_runner(mod, self.config)
+            if self.config.partition_policy == "ordered" and baseline.kernel_count == 0:
+                raise UnsupportedGraphError("Ordered partition compiled to zero TileLang kernels")
         except Exception as error:
             # This region only constructs and compiles IR. Kernel execution,
             # including validation/profiling below, is outside this catch.
@@ -280,8 +286,9 @@ class _CompiledPartition(torch.nn.Module):
         return runner(*args)
 
 
-def _fallback(gm: fx.GraphModule, reason: str):
-    report = GraphReport(fallback_reason=reason)
+def _fallback(gm: fx.GraphModule, reason: str, report: GraphReport | None = None):
+    report = report if report is not None else GraphReport()
+    report.fallback_reason = reason
 
     def run(*args):
         return gm(*args)
@@ -301,31 +308,45 @@ def make_backend(config: GraphConfig | None = None) -> Callable:
         local_config = GraphConfig(**options) if config is None else replace(config, **options)
         context = _resolve_graph_context(local_config)
         local_config = _resolved_config(local_config, context)
-        if _has_unsafe_effects(gm):
+        ordered = local_config.partition_policy == "ordered"
+        if ordered:
+            module_hooks = torch.nn.modules.module
+            unsafe = _has_forward_hooks(gm) or module_hooks._global_forward_hooks or module_hooks._global_forward_pre_hooks
+        else:
+            unsafe = _has_unsafe_effects(gm)
+        if unsafe:
             if local_config.strict:
                 raise UnsupportedGraphError("Graph contains mutation, aliases, or opaque effects")
             return _fallback(gm, "Graph contains mutation, aliases, or opaque effects")
-        if any(not isinstance(value, torch.Tensor) for value in example_inputs):
+        if not ordered and any(not isinstance(value, torch.Tensor) for value in example_inputs):
             if local_config.strict:
                 raise UnsupportedGraphError("Graph requires tensor-only static inputs")
             return _fallback(gm, "Graph requires tensor-only static inputs")
         # Copy graph structure while retaining the user's modules and tensors.
         # Deep-copying the entire module could duplicate NPU parameters.
         partitioned = fx.GraphModule(gm, deepcopy(gm.graph))
-        partitioner = CapabilityBasedPartitioner(partitioned, _SupportedOperators(), allows_single_node_partition=True)
-        partitions = partitioner.propose_partitions()
-        if not partitions:
+        support = _SupportedOperators()
+        report = GraphReport()
+        if ordered:
+            planned = partition_in_order(partitioned, example_inputs, support, validate_inputs, report)
+        else:
+            partitioner = CapabilityBasedPartitioner(partitioned, support, allows_single_node_partition=True)
+            partitions = partitioner.propose_partitions()
+            if partitions:
+                partitioned = partitioner.fuse_partitions(partitions, prefix="tilelang_partition_")
+            planned = {
+                str(node.target): ((), ()) for node in partitioned.graph.nodes
+                if node.op == "call_module" and str(node.target).startswith("tilelang_partition_")
+            } if partitions else {}
+        if not planned:
             if local_config.strict:
                 raise UnsupportedGraphError("Graph has no supported Ascend partitions")
-            return _fallback(gm, "Graph has no supported Ascend partitions")
-        partitioned = partitioner.fuse_partitions(partitions, prefix="tilelang_partition_")
-        report = GraphReport()
-        for node in partitioned.graph.nodes:
-            if node.op == "call_module" and str(node.target).startswith("tilelang_partition_"):
-                name = str(node.target)
-                status = PartitionReport(name, target_backend=context.module.name, execution_backend=context.execution_backend.name)
-                report.partitions.append(status)
-                partitioned.set_submodule(name, _CompiledPartition(partitioned.get_submodule(name), local_config, status))
+            return _fallback(gm, "Graph has no supported Ascend partitions", report)
+        for name, (node_names, targets) in planned.items():
+            status = PartitionReport(name, target_backend=context.module.name, execution_backend=context.execution_backend.name,
+                                     node_names=node_names, targets=targets)
+            report.partitions.append(status)
+            partitioned.set_submodule(name, _CompiledPartition(partitioned.get_submodule(name), local_config, status))
 
         def run(*args):
             return partitioned(*args)

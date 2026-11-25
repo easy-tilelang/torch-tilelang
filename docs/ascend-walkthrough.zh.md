@@ -214,6 +214,19 @@ y
 
 #### 代码中的分区流程
 
+上述行为是默认策略 `partition_policy="conservative"`。对含 KV 缓存更新或第三方算子的推理图，可以按下面的方式启用有序分区。
+
+```python
+from torch_tilelang import GraphConfig, make_backend
+
+backend = make_backend(GraphConfig(target="ascendc", partition_policy="ordered", strict=True))
+decode = torch.compile(model.main_decode, backend=backend, dynamic=False, fullgraph=True)
+```
+
+`target="pto"` 使用同一分区策略。有序策略只组合原图中连续且签名受支持的纯计算。视图、原地写入和第三方算子保留在原来的执行位置。即使第三方算子的注册声明没有副作用，它也在原生端执行；首次校验与融合试跑只会执行选中的纯分区。只有类型转换的区域也保留在原生端，避免供应商算子的运行时 dtype 与捕获阶段推断不同而将恒等转换误计为内核。模型带有 forward hook 时继续使用保守保护。
+
+在自定义 Dynamo 回调中保留 `runner = backend(gm, example_inputs)`，可通过 `runner.graph_report` 检查实际覆盖。`native_nodes` 记录计划留在原生端的节点和原因，`partitions` 记录每个 TileLang 分区的 `node_names`、`targets`、内核数及调用计数。设备同步完成后，比较预热前后或请求前后的 `compiled_calls` 和 `fallback_calls`。严格模式要求至少有一个可编译分区，并传播所选分区的构建或校验错误；允许计划中的原生调用。
+
 `backend.py:304-334`：
 
 1. **副作用判定** `_has_unsafe_effects`（`backend.py:106`）：

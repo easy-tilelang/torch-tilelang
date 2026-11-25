@@ -532,10 +532,11 @@ def test_partition_reads_updated_module_buffers(monkeypatch):
     assert all(part.compiled_calls == 2 for part in run.graph_report.partitions)
 
 
+@pytest.mark.parametrize("policy", ["conservative", "ordered"])
 @pytest.mark.parametrize("location", ["activation", "graph"])
 @pytest.mark.parametrize("kind", ["pre", "post"])
-def test_module_forward_hooks_keep_the_original_graph(monkeypatch, location, kind):
-    backend = _cpu_backend(monkeypatch)
+def test_module_forward_hooks_keep_the_original_graph(monkeypatch, location, kind, policy):
+    backend = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy=policy))
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     graph.output(graph.call_module("activation", (x,)))
@@ -564,7 +565,7 @@ def test_module_forward_hooks_keep_the_original_graph(monkeypatch, location, kin
     assert not run.graph_report.partitions
     assert run.graph_report.fallback_reason
     with pytest.raises(UnsupportedGraphError, match="opaque effects"):
-        make_backend(GraphConfig(strict=True))(gm, (first,))
+        make_backend(GraphConfig(strict=True, partition_policy=policy))(gm, (first,))
     with pytest.raises(UnsupportedGraphError, match="forward hooks"):
         fx_to_relax(gm, (first,))
     assert len(calls) == 2
@@ -687,11 +688,12 @@ def test_strict_backend_propagates_compilation_failure(monkeypatch):
         backend(gm, (x, y))(x, y)
 
 
-def test_strict_backend_requires_an_ascend_partition():
+@pytest.mark.parametrize("policy", ["conservative", "ordered"])
+def test_strict_backend_requires_an_ascend_partition(policy):
     _require_native_ascend()
     gm = torch.fx.symbolic_trace(lambda x: torch.sin(x))
     with pytest.raises(UnsupportedGraphError, match="no supported Ascend partitions"):
-        make_backend(GraphConfig(strict=True))(gm, (torch.ones(8),))
+        make_backend(GraphConfig(strict=True, partition_policy=policy))(gm, (torch.ones(8),))
 
 
 @pytest.mark.parametrize(
@@ -959,3 +961,243 @@ def test_overlapping_signatures_count_the_selected_runners(monkeypatch):
             resume.set()
         torch.testing.assert_close(compiled.result(), model(x))
     assert status.compiled_calls == 1 and status.fallback_calls == 1
+
+
+def _trace_ordered(fn, *args):
+    from torch.fx.experimental.proxy_tensor import make_fx
+
+    # Propagate shape, stride and storage offset without touching the actual cache.
+    return make_fx(fn, tracing_mode="fake")(*args)
+
+
+def _assert_ordered_calls(report, count):
+    assert not report.fallback_reason
+    assert len(report.partitions) == 2
+    for part in report.partitions:
+        assert part.compiled and part.kernel_count > 0
+        assert part.compiled_calls == count and part.fallback_calls == 0
+        assert part.node_names and part.targets
+
+
+def test_ordered_policy_is_explicit():
+    assert GraphConfig().partition_policy == "conservative"
+    with pytest.raises(ValueError, match="partition_policy"):
+        GraphConfig(partition_policy="unordered")
+
+
+def test_ordered_preserves_mutation_through_overlapping_inputs(monkeypatch):
+    def step(cache, overlapping):
+        before = cache.square()
+        target = overlapping[1:]
+        old_window = torch.relu(target)
+        target.add_(1)
+        after = cache + cache
+        return before, after, target, old_window
+
+    cache = torch.arange(9, dtype=torch.float32)
+    expected = cache.clone()
+    gm = _trace_ordered(step, cache, cache[1:])
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered", strict=True))(gm, [cache, cache[1:]])
+    first = None
+    for _ in range(2):
+        actual = run(cache, cache[1:])
+        torch.testing.assert_close(actual, step(expected, expected[1:]))
+        torch.testing.assert_close(cache, expected)
+        assert actual[2].untyped_storage().data_ptr() == cache.untyped_storage().data_ptr()
+        assert actual[2].storage_offset() == 2
+        if first is None:
+            first = actual[0], actual[0].clone()
+    torch.testing.assert_close(*first)
+    _assert_ordered_calls(run.graph_report, 2)
+    native = [n.name for n in run.graph_report.native_nodes]
+    # ReLU itself is supported, but its input has a nonzero storage offset.
+    # It must execute natively here without an implicit materializing copy.
+    expected_native = (torch.ops.aten.slice.Tensor, torch.ops.aten.relu.default, torch.ops.aten.add_.Tensor)
+    assert native == [n.name for n in gm.graph.nodes if n.target in expected_native]
+    assert all(n.target and n.reason for n in run.graph_report.native_nodes)
+
+
+def test_ordered_vendor_void_write_and_vendor_add_execute_once(monkeypatch):
+    # The name "add" is deliberately shared with ATen; this vendor's op subtracts.
+    lib = torch.library.Library("tilelang_ordered_test", "FRAGMENT")
+    lib.define("store(Tensor(a!) dst) -> ()")
+    lib.define("add(Tensor lhs, Tensor rhs) -> Tensor")
+    calls = []
+
+    def store(dst):
+        calls.append("store")
+        dst.add_(1)
+
+    def vendor_add(lhs, rhs):
+        calls.append("vendor")
+        return lhs - rhs
+
+    lib.impl("store", store, "CPU")
+    lib.impl("store", lambda dst: None, "Meta")
+    lib.impl("add", vendor_add, "CPU")
+    lib.impl("add", lambda lhs, rhs: torch.empty_like(lhs), "Meta")
+    ops = torch.ops.tilelang_ordered_test
+
+    def step(cache, overlap):
+        before = cache.square()
+        ops.store.default(overlap)
+        adjusted = ops.add.default(cache, before)
+        return before, adjusted.square()
+
+    cache = torch.arange(8, dtype=torch.float32)
+    expected = cache.clone()
+    gm = _trace_ordered(step, cache, cache[1:])
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered", strict=True))(gm, [cache, cache[1:]])
+    assert not calls
+    for count in (1, 2):
+        before = expected.square()
+        expected[1:].add_(1)
+        torch.testing.assert_close(run(cache, cache[1:]), (before, (expected - before).square()))
+        torch.testing.assert_close(cache, expected)
+        assert calls == ["store", "vendor"] * count
+    _assert_ordered_calls(run.graph_report, 2)
+    assert [n.name for n in run.graph_report.native_nodes] == [
+        n.name for n in gm.graph.nodes if n.target in (ops.store.default, ops.add.default)
+    ]
+
+
+def test_ordered_random_boundary_preserves_rng_state(monkeypatch):
+    def sample(x):
+        before = x.square()
+        noise = torch.rand_like(x)
+        return (noise + before) * x
+
+    x = torch.arange(8, dtype=torch.float32)
+    gm = _trace_ordered(sample, x)
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered", strict=True))(gm, [x])
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(326)
+        expected = [sample(x), sample(x)]
+        expected_state = torch.random.get_rng_state()
+        torch.manual_seed(326)
+        torch.testing.assert_close([run(x), run(x)], expected)
+        assert torch.equal(torch.random.get_rng_state(), expected_state)
+    _assert_ordered_calls(run.graph_report, 2)
+    native = [n.name for n in run.graph_report.native_nodes]
+    assert native == [n.name for n in gm.graph.nodes if n.target == torch.ops.aten.rand_like.default]
+
+
+def test_ordered_runtime_failure_does_not_repeat_earlier_write(monkeypatch):
+    def step(cache):
+        before = cache + cache
+        cache.add_(1)
+        return before, cache * cache
+
+    def compile_kernel(func, config):
+        if "multiply" in str(func.attrs["global_symbol"]):
+            def fail(*args):
+                raise RuntimeError("device execution failed after the write")
+
+            return fail
+        return _cpu_kernel_compiler(func, config)
+
+    cache = torch.zeros(8)
+    gm = _trace_ordered(step, cache)
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered"), compiler=compile_kernel)(gm, [cache])
+    with pytest.raises(RuntimeError, match="device execution failed after the write"):
+        run(cache)
+    torch.testing.assert_close(cache, torch.ones_like(cache))
+    assert all(part.fallback_calls == 0 for part in run.graph_report.partitions)
+
+
+def test_ordered_global_module_hook_observes_original_calls(monkeypatch):
+    gm = _trace_ordered(lambda x: x.square(), torch.ones(4))
+    calls = []
+
+    def replace_result(module, args, output):
+        calls.append(module)
+        return output + 3
+
+    backend = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered"))
+    with torch.nn.modules.module.register_module_forward_hook(replace_result):
+        run = backend(gm, [torch.ones(4)])
+        assert run.graph_report.fallback_reason
+        torch.testing.assert_close(run(torch.ones(4)), torch.full((4,), 4.0))
+    assert calls == [gm]
+
+
+def test_repeated_binary_operand_has_unique_kernel_abi_names(monkeypatch):
+    inputs_seen = []
+
+    def compile_kernel(func, config):
+        names = [func.buffer_map[p].data.name for p in func.params[:-1]]
+        inputs_seen.append(names)
+        return _cpu_kernel_compiler(func, config)
+
+    x = torch.tensor([float("nan"), float("inf"), -float("inf"), -0.0, 2.0])
+    gm = torch.fx.symbolic_trace(lambda x: x - x)
+    run = _cpu_backend(monkeypatch, config=GraphConfig(strict=True), compiler=compile_kernel)(gm, [x])
+    actual = run(x)
+    torch.testing.assert_close(actual, x - x, equal_nan=True)
+    (names,) = inputs_seen
+    assert len(names) == len(set(names)) == 2
+
+
+def test_ordered_keeps_torch_scalar_tensor_promotion(monkeypatch):
+    def model(x, scale):
+        return torch.relu((x + x) * scale)
+
+    x = torch.tensor([-2, 1, 3], dtype=torch.float16)
+    scale = torch.tensor(1.0004, dtype=torch.float32)
+    gm = _trace_ordered(model, x, scale)
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered", strict=True))(gm, [x, scale])
+    torch.testing.assert_close(run(x, scale), model(x, scale), rtol=0, atol=0)
+    _assert_ordered_calls(run.graph_report, 1)
+    assert [n.name for n in run.graph_report.native_nodes] == [n.name for n in gm.graph.nodes if n.target == torch.ops.aten.mul.Tensor]
+
+
+def test_ordered_softmax_keeps_positional_accumulation_dtype(monkeypatch):
+    from torch.fx.passes.fake_tensor_prop import FakeTensorProp
+
+    def model(x):
+        return torch.relu(torch.softmax(x + x, -1, torch.float32))
+
+    x = torch.tensor([-0.75, 0.5, 0.75], dtype=torch.float16)
+    gm = torch.fx.symbolic_trace(model)
+    FakeTensorProp(gm).propagate(x)
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered", strict=True))(gm, [x])
+    torch.testing.assert_close(run(x), model(x), rtol=0, atol=0)
+    _assert_ordered_calls(run.graph_report, 1)
+    assert [n.name for n in run.graph_report.native_nodes] == [n.name for n in gm.graph.nodes if n.target is torch.softmax]
+
+
+def test_ordered_standalone_cast_uses_runtime_dtype_of_vendor_output(monkeypatch):
+    from torch.fx.passes.fake_tensor_prop import FakeTensorProp
+
+    lib = torch.library.Library("tilelang_ordered_test", "FRAGMENT")
+    lib.define("vendor_output(Tensor x) -> Tensor")
+    actual_outputs = []
+
+    def vendor(x):
+        result = x + 1
+        actual_outputs.append(result)
+        return result
+
+    # The model's vendor fake implementation reports a BF16 tensor even when
+    # the device operator produces FP32. Its .float() then returns the input.
+    lib.impl("vendor_output", vendor, "CPU")
+    lib.impl("vendor_output", lambda x: torch.empty_like(x, dtype=torch.bfloat16), "Meta")
+    op = torch.ops.tilelang_ordered_test.vendor_output.default
+
+    def model(x):
+        value = op(x).float()
+        bounded = torch.sin(x)
+        return value, torch.relu(bounded.half())
+
+    x = torch.arange(7, dtype=torch.float32)
+    gm = torch.fx.symbolic_trace(model)
+    FakeTensorProp(gm).propagate(x)
+    run = _cpu_backend(monkeypatch, config=GraphConfig(partition_policy="ordered", strict=True))(gm, [x])
+    value, activated = run(x)
+    assert len(actual_outputs) == 1 and value is actual_outputs[0]
+    torch.testing.assert_close(value, x + 1)
+    torch.testing.assert_close(activated, torch.relu(torch.sin(x).half()))
+    part, = run.graph_report.partitions
+    assert set(part.node_names) == {n.name for n in gm.graph.nodes if n.target in ("half", torch.relu)}
+    assert part.compiled and part.compiled_calls == 1 and not part.fallback_calls
+    assert [n.name for n in run.graph_report.native_nodes] == [n.name for n in gm.graph.nodes if n.target in (op, "float", torch.sin)]

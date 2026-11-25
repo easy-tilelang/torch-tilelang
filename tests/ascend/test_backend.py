@@ -336,3 +336,38 @@ def test_fused_scalar_semantics(case, dtype, target, execution_backend):
     with torch.no_grad():
         _assert_exact_values(runner(first), model(first))
         _assert_exact_values(runner(later), model(later))
+
+
+@tilelang.testing.requires_ascend
+@pytest.mark.parametrize("target,execution_backend", _BACKENDS)
+def test_ordered_decode_steps_share_mutated_cache(target, execution_backend, monkeypatch):
+    def step(cache, overlapping):
+        before = cache.square()
+        view = overlapping[1:]
+        view.add_(1)
+        after = cache + cache
+        return before, after, view
+
+    torch._dynamo.reset()
+    kernels = _capture_kernels(monkeypatch)
+    config = _config(target, execution_backend, partition_policy="ordered")
+    backend, reports = _capture_backend(config)
+    compiled = torch.compile(step, backend=backend, fullgraph=True, dynamic=False)
+    cache = torch.arange(65, device="npu", dtype=torch.float32)
+    expected = cache.clone()
+    saved = []
+    for _ in range(2):
+        actual = compiled(cache, cache[1:])
+        torch.testing.assert_close(actual, step(expected, expected[1:]))
+        torch.testing.assert_close(cache, expected)
+        assert actual[2].storage_offset() == 2
+        assert actual[2].untyped_storage().data_ptr() == cache.untyped_storage().data_ptr()
+        saved.append((actual[0], actual[0].clone()))
+    torch.npu.synchronize()
+    for output, previous in saved:
+        torch.testing.assert_close(output, previous)
+    report, = reports
+    assert not report.fallback_reason and report.native_nodes
+    assert len(report.partitions) == 2
+    assert all(p.compiled and p.kernel_count > 0 and p.compiled_calls == 2 and p.fallback_calls == 0 for p in report.partitions)
+    _assert_kernel_backends(kernels, execution_backend)

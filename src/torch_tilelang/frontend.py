@@ -23,6 +23,12 @@ def _has_forward_hooks(gm: torch.fx.GraphModule) -> bool:
 
 
 def _legalize_binary(bb, call):
+    lhs, rhs = call.args
+    if lhs.same_as(rhs):
+        # Give the second formal buffer a distinct ABI name, keeping the same
+        # input tensor and scalar operation (including NaN-sensitive x - x).
+        rhs = bb.emit(rhs, name_hint="binary_rhs")
+        return bb.call_te(getattr(topi, call.op.name.removeprefix("relax.")), lhs, rhs)
     # The default legalizer embeds scalar constants into TIR. Its arithmetic
     # folding treats x * 0 as 0 and x + 0 as x, losing NaNs and signed zeros.
     # Keep zero constants as tensor inputs so later passes cannot fold them.

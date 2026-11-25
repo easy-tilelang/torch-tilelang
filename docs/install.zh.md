@@ -260,6 +260,18 @@ PTO 执行额外要求：
 
 缓存复用相关问题见 `tests/ascend/test_pto_cache.py`。
 
+### 6.7 融合计时的已知问题
+
+- **NPU 冷缓存计时。** 在 Ascend 950PR、x86 驱动 25.7.rc1、CANN 9.3.0 上，使用 `fusion="profile"` 和默认的 `benchmark_backend="event"` 时，驱动在计时前返回 `aclrtDeviceL2CacheFlush failed: 207000`。AscendC 和 PTO 的融合选择都会在这里中止。需要运行已编译的分区时，可使用默认的 `fusion="off"`。驱动支持条件与进展见 [TileLang #4432](https://github.com/tile-ai/tilelang/issues/4432)。
+- **可选的 msprof 计时。** 当已安装的 TileLang 缺少 `tilelang.profiler.errors.ProfileUnavailableError` 时，选择 `benchmark_backend="msprof"` 会让融合选择器记录 `measurement unavailable` 并沿用已编译的未融合版本。CPU 测试会跳过依赖该异常类型的用例，另有兼容测试验证这个行为。
+
+在包含 [TileLang PR #4408](https://github.com/tile-ai/tilelang/pull/4408) 的构建上，上述环境的 `tests/ascend` 有 279 项通过，2 项因冷缓存计时失败。`tests/unit` 有 193 项通过，1 项因缺少可选接口跳过。可用以下命令复查这两个计时限制。
+
+```bash
+python -m pytest -q tests/ascend/test_backend.py::test_profiled_torch_compile_records_fusion_decision
+python -m pytest -q -rs tests/unit/test_compat.py
+```
+
 ---
 
 ## 7. 卸载
@@ -285,4 +297,4 @@ editable 安装卸载后会移除 entry point；如需保留源码，仅需重�
 
 ---
 
-*最后更新：2026-11-19。对应依赖声明见 `pyproject.toml`，后端解析见 `src/torch_tilelang/compat/tilelang.py`。*
+*本文更新于 2026-11-26。对应依赖声明见 `pyproject.toml`，后端解析见 `src/torch_tilelang/compat/tilelang.py`。*

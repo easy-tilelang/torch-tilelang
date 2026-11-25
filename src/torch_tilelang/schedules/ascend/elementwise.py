@@ -464,12 +464,16 @@ def schedule_elementwise(func: tirx.PrimFunc, config=None) -> tirx.PrimFunc:
     lane = (lane_loop * threads + thread) * vector_width
     tile = tile_loop * grid + core
     linear = tirx.Cast("int64", tile) * tile_size + tirx.Cast("int64", lane)
-    remaining = linear + vector_lane if vector_width > 1 else linear
+    remaining = linear
     decoded = []
     for extent in reversed(shape):
         decoded.append(remaining % extent)
         remaining = remaining // extent
     decoded.reverse()
+    if vector_width > 1:
+        # Chunks are aligned and fit in the final axis. Decode their shared
+        # outer coordinates once so broadcast loads have scalar GM addresses.
+        decoded[-1] = decoded[-1] + vector_lane
     value = tirx.stmt_functor.substitute(expression, dict(zip(coordinates, decoded)))
     store = tirx.BufferStore(output, value, decoded)
     allocations = []

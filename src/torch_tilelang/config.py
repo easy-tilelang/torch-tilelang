@@ -31,6 +31,7 @@ class GraphConfig:
     benchmark_repeats: int = 3
     benchmark_backend: str = "event"
     strict: bool = False
+    partition_policy: str = "conservative"
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, str) or not self.target.strip():
@@ -55,3 +56,5 @@ class GraphConfig:
                 raise ValueError(f"{name} must be finite and in [0, 1)")
         if not isinstance(self.strict, bool):
             raise ValueError("strict must be a bool")
+        if self.partition_policy not in ("conservative", "ordered"):
+            raise ValueError("partition_policy must be 'conservative' or 'ordered'")
