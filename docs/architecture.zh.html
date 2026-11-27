@@ -366,6 +366,7 @@
         <div class="hero-actions">
           <a href="#pipeline"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg>查看编译流程</a>
           <a href="#example"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>跟读代码示例</a>
+          <a href="architecture-v2.zh.html"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>查看功能开发现状</a>
         </div>
       </div>
       <svg class="hero-diagram" viewBox="0 0 500 310" role="img" aria-labelledby="stack-title stack-desc" xmlns="http://www.w3.org/2000/svg">
@@ -1358,6 +1359,7 @@ torch.testing.<span class="tok-fn">assert_close</span>(compiled(x, bias), model(
     "lines": [
       "| 文档 | 说明 |",
       "| --- | --- |",
+      "| [功能开发现状（HTML · 架构导览 v2）](architecture-v2.zh.html) | 按已实现、有限支持、尚未实现筛选功能，查看有序分区示例、算子边界、源码和验证入口 |",
       "| [项目架构导览（HTML）](architecture.zh.html) | 用浏览器打开，查看项目全景、编译流程和模块依赖，跟读 Ascend 推理示例 |",
       "| [安装手册](install.zh.md) | 环境前置条件、editable/wheel 安装、入口验证与常见问题（含 InvalidBackend 排障） |",
       "| [Ascend 后端编译流程走读](ascend-walkthrough.zh.md) | 以 `examples/ascend/test_torch_compile.py` 为例，说明 FX 捕获、分区、编译、执行全流程 |"
